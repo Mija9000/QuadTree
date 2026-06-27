@@ -13,6 +13,11 @@ QuadTree::~QuadTree() {
     clear(root);
 }
 
+void QuadTree::reset() {
+    clear(root);
+    root = new QuadNode(boundary, capacity);
+}
+
 void QuadTree::clear(QuadNode* node) {
     if (!node) return;
     for (int i = 0; i < 4; i++) {
@@ -136,9 +141,20 @@ void QuadTree::query(const AABB& range, std::vector<Particle*>& result, int& com
 
 
 void QuadTree::rebuild(std::vector<Particle>& particles) {
-    clear(root);
-    root = new QuadNode(boundary, capacity); // Usar miembros guardados
+    reset();
     for (auto& p : particles) {
         insert(&p);
     }
 }
+
+
+/*
+[QUERY] Rango (50,50)-(100,100)
+[QUERY] Nodos visitados: 8
+[QUERY] Regiones exploradas:
+   Nodo (0,0,200,200)
+   Nodo (100,0,100,100)
+   Nodo (50,50,50,50)
+[QUERY] Subdivisiones activas: 3
+[QUERY] Partículas encontradas: 12
+*/

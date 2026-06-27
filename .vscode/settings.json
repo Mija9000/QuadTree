@@ -1,0 +1,5 @@
+{
+    "github.copilot.chat.claude47OpusPrompt.enabled": false,
+    "github.copilot.chat.gpt55GetChangedFilesTool.enabled": false,
+    "github.copilot.chat.gpt55ReadFileTool.enabled": false
+}

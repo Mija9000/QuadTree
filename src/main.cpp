@@ -2,8 +2,50 @@
 #include "QuadTree.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
+#include <random>
+
+namespace {
+
+constexpr double kWorldX = 0.0;
+constexpr double kWorldY = 0.0;
+constexpr double kWorldW = 400.0;
+constexpr double kWorldH = 400.0;
+
+std::mt19937& rng() {
+    static std::mt19937 generator{std::random_device{}()};
+    return generator;
+}
+
+double randomDouble(double minValue, double maxValue) {
+    std::uniform_real_distribution<double> distribution(minValue, maxValue);
+    return distribution(rng());
+}
+
+nlohmann::json particleToJson(const Particle* p) {
+    return {
+        {"id", p->id},
+        {"x", p->x},
+        {"y", p->y},
+        {"vx", p->vx},
+        {"vy", p->vy},
+        {"radius", p->radius}
+    };
+}
+
+bool readRange(const crow::json::rvalue& body, AABB& range) {
+    if (!body.has("x") || !body.has("y") || !body.has("w") || !body.has("h")) {
+        return false;
+    }
+
+    range = {body["x"].d(), body["y"].d(), body["w"].d(), body["h"].d()};
+    return range.w > 0.0 && range.h > 0.0;
+}
+
+} // namespace
 
 std::ofstream logFile("/tmp/quadtree.log", std::ios_base::app);
+
+namespace {
 
 // Función recursiva para convertir un nodo a JSON
 nlohmann::json nodeToJson(QuadNode* node) {
@@ -12,14 +54,7 @@ nlohmann::json nodeToJson(QuadNode* node) {
                       {"w", node->boundary.w}, {"h", node->boundary.h} };
     j["particles"] = nlohmann::json::array();
     for (auto* p : node->particles) {
-        j["particles"].push_back({
-            {"id", p->id},
-            {"x", p->x},
-            {"y", p->y},
-            {"vx", p->vx},
-            {"vy", p->vy},
-            {"radius", p->radius}
-        });
+        j["particles"].push_back(particleToJson(p));
     }
     j["children"] = nlohmann::json::array();
     if (node->divided) {
@@ -29,6 +64,8 @@ nlohmann::json nodeToJson(QuadNode* node) {
     }
     return j;
 }
+
+} // namespace
 
 // Middleware CORS global
 struct CORSMiddleware {
@@ -51,17 +88,14 @@ struct CORSMiddleware {
 
 int main() {
     crow::App<CORSMiddleware> app;
-    
-    // Acceso al middleware CORS
-    auto& cors = app.get_middleware<CORSMiddleware>();
 
-    QuadTree tree({0,0,400,400}, 4);
-    static int nextId = 0; // contador global de IDs
+    QuadTree tree({kWorldX, kWorldY, kWorldW, kWorldH}, 4);
+    int nextId = 0; // contador global de IDs
 
 
 
     // Endpoint para insertar partículas
-    CROW_ROUTE(app, "/insert").methods("POST"_method)([&tree](const crow::request& req){
+    CROW_ROUTE(app, "/insert").methods("POST"_method)([&tree, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body) {
             crow::response res(400);
@@ -88,6 +122,44 @@ int main() {
     });
 
 
+    CROW_ROUTE(app, "/bulk-insert").methods("POST"_method)([&tree, &nextId](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if (!body || !body.has("count")) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid json, expected count\"}";
+            return res;
+        }
+
+        int count = body["count"].i();
+        if (count <= 0 || count > 5000) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"count must be between 1 and 5000\"}";
+            return res;
+        }
+
+        logFile << "[ENDPOINT] Bulk insert de " << count << " partículas" << std::endl;
+        logFile.flush();
+
+        for (int i = 0; i < count; ++i) {
+            auto* p = new Particle(
+                nextId++,
+                randomDouble(kWorldX, kWorldX + kWorldW),
+                randomDouble(kWorldY, kWorldY + kWorldH),
+                0.0,
+                0.0,
+                1.0
+            );
+            tree.insert(p);
+        }
+
+        crow::response res(200);
+        res.set_header("Content-Type", "application/json");
+        res.body = std::string("{\"status\":\"ok\",\"inserted\":") + std::to_string(count) + "}";
+        return res;
+    });
+
 
     // Endpoint para devolver el árbol
     CROW_ROUTE(app, "/tree").methods("GET"_method)([&tree](){
@@ -105,7 +177,109 @@ int main() {
         }
     });
 
+    CROW_ROUTE(app, "/query").methods("POST"_method)([&tree](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid json\"}";
+            return res;
+        }
 
+        AABB range;
+        if (!readRange(body, range)) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid range\"}";
+            return res;
+        }
+
+        std::vector<Particle*> result;
+        int comparisons = 0;
+        tree.query(range, result, comparisons);
+
+        nlohmann::json response;
+        response["range"] = {
+            {"x", range.x},
+            {"y", range.y},
+            {"w", range.w},
+            {"h", range.h}
+        };
+        response["comparisons"] = comparisons;
+        response["count"] = result.size();
+        response["particles"] = nlohmann::json::array();
+        for (const auto* p : result) {
+            response["particles"].push_back(particleToJson(p));
+        }
+
+        crow::response res(200);
+        res.set_header("Content-Type", "application/json");
+        res.body = response.dump();
+        return res;
+    });
+
+
+
+    // Nuevos -----------------------------------
+
+    // Endpoint para vaciar el árbol
+    CROW_ROUTE(app, "/clear").methods("POST"_method)([&tree, &nextId](){
+        logFile << "[ENDPOINT] Clear solicitado" << std::endl;
+        logFile.flush();
+
+        tree.reset();
+        nextId = 0;
+
+        crow::response res(200);
+        res.set_header("Content-Type", "application/json");
+        res.body = "{\"status\":\"cleared\"}";
+        return res;
+    });
+
+
+    // Endpoint para reconstruir el árbol con un conjunto de partículas
+    CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &nextId](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if (!body || !body.has("particles")) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid json, expected particles array\"}";
+            return res;
+        }
+
+        logFile << "[ENDPOINT] Rebuild con " << body["particles"].size() << " partículas" << std::endl;
+        logFile.flush();
+
+        // Convertir JSON a vector de partículas
+        std::vector<Particle> particles;
+        for (auto& pj : body["particles"]) {
+            Particle p(
+                pj["id"].i(),
+                pj["x"].d(),
+                pj["y"].d(),
+                pj["vx"].d(),
+                pj["vy"].d(),
+                pj["radius"].d()
+            );
+            particles.push_back(p);
+        }
+
+        tree.rebuild(particles);
+
+        nextId = 0;
+        if (!particles.empty()) {
+            for (const auto& particle : particles) {
+                if (particle.id >= nextId) {
+                    nextId = particle.id + 1;
+                }
+            }
+        }
+
+        crow::response res(200);
+        res.set_header("Content-Type", "application/json");
+        res.body = "{\"status\":\"rebuilt\",\"count\":" + std::to_string(particles.size()) + "}";
+        return res;
+    });
 
 
     app.port(8080).multithreaded().run();

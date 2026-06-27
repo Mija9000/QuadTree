@@ -53,3 +53,73 @@ export async function insertParticle(p: { x: number; y: number }) {
     throw new Error(`No se pudo insertar la partícula: ${message}`);
   }
 }
+
+export async function bulkInsertParticles(count: number) {
+  try {
+    if (!Number.isFinite(count) || count <= 0) {
+      throw new Error("Cantidad inválida");
+    }
+
+    const res = await fetch("http://localhost:8080/bulk-insert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      body: JSON.stringify({ count }),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error HTTP ${res.status}: ${errorText || "Sin respuesta del servidor"}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en bulkInsertParticles:", message);
+    throw new Error(`No se pudo hacer la inserción masiva: ${message}`);
+  }
+}
+
+export async function clearTree() {
+  try {
+    const res = await fetch("http://localhost:8080/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      body: JSON.stringify({}),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error HTTP ${res.status}: ${errorText || "Sin respuesta del servidor"}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en clearTree:", message);
+    throw new Error(`No se pudo limpiar el árbol: ${message}`);
+  }
+}
+
+export async function queryTree(range: { x: number; y: number; w: number; h: number }) {
+  try {
+    const res = await fetch("http://localhost:8080/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      mode: "cors",
+      body: JSON.stringify(range),
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Error HTTP ${res.status}: ${errorText || "Sin respuesta del servidor"}`);
+    }
+
+    return await res.json();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en queryTree:", message);
+    throw new Error(`No se pudo consultar el árbol: ${message}`);
+  }
+}

@@ -8,7 +8,7 @@ class QuadTree {
     int capacity;    // Guardar capacidad global
 
     void subdivide(QuadNode* node);
-    void clear(QuadNode* node);
+    
     void insertRecursive(QuadNode* node, Particle* p);
 
 public:
@@ -18,6 +18,9 @@ public:
     void insert(Particle* p);
     void query(const AABB& range, std::vector<Particle*>& result, int& comparisons);
     void rebuild(std::vector<Particle>& particles);
+    void reset();
+
+    void clear(QuadNode* node);
 
     // Getter correcto
     QuadNode* getRoot() { return root; }
