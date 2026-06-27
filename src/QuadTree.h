@@ -1,34 +1,24 @@
-#ifndef QUADTREE_H
-#define QUADTREE_H
-
+#pragma once
 #include <vector>
-#include "Particle.h"
+#include "QuadNode.h"
 
 class QuadTree {
-private:
-    // límites de la región
-    double x_min, y_min, x_max, y_max;
-    int capacity;
-    bool divided;
+    QuadNode* root;
+    AABB boundary;   // Guardar boundary global
+    int capacity;    // Guardar capacidad global
 
-    // objetos en este nodo
-    std::vector<Particle> objects;
-
-    // hijos
-    QuadTree* NE;
-    QuadTree* NW;
-    QuadTree* SE;
-    QuadTree* SW;
-
-    void subdivide();
+    void subdivide(QuadNode* node);
+    void clear(QuadNode* node);
+    void insertRecursive(QuadNode* node, Particle* p);
 
 public:
-    QuadTree(double xmin, double ymin, double xmax, double ymax, int cap);
+    QuadTree(const AABB& boundary, int capacity);
     ~QuadTree();
 
-    bool insert(const Particle& p);
-    void queryRange(double xmin, double ymin, double xmax, double ymax,
-                    std::vector<Particle>& found);
-};
+    void insert(Particle* p);
+    void query(const AABB& range, std::vector<Particle*>& result, int& comparisons);
+    void rebuild(std::vector<Particle>& particles);
 
-#endif
+    // Getter correcto
+    QuadNode* getRoot() { return root; }
+};
