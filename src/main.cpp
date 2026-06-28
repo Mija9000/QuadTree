@@ -1,7 +1,6 @@
 #include "crow_all.h"
 #include "QuadTree.h"
 #include <nlohmann/json.hpp>
-#include <fstream>
 #include <random>
 
 namespace {
@@ -42,8 +41,6 @@ bool readRange(const crow::json::rvalue& body, AABB& range) {
 }
 
 } // namespace
-
-std::ofstream logFile("/tmp/quadtree.log", std::ios_base::app);
 
 namespace {
 
@@ -106,22 +103,15 @@ int main() {
 
         double x = body["x"].d();
         double y = body["y"].d();
-        logFile << "[ENDPOINT] Insertando partícula en (" << x << ", " << y << ")" << std::endl;
-        logFile.flush();
 
         Particle* p = new Particle(nextId++, x, y, 0.0, 0.0, 1.0);
         tree.insert(p);
-
-        logFile << "[ENDPOINT] Insert completado" << std::endl;
-        logFile.flush();
 
         crow::response res(200);
         res.set_header("Content-Type", "application/json");
         res.body = "{\"status\":\"ok\"}";
         return res;
     });
-
-
     CROW_ROUTE(app, "/bulk-insert").methods("POST"_method)([&tree, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body || !body.has("count")) {
@@ -138,9 +128,6 @@ int main() {
             res.body = "{\"error\":\"count must be between 1 and 5000\"}";
             return res;
         }
-
-        logFile << "[ENDPOINT] Bulk insert de " << count << " partículas" << std::endl;
-        logFile.flush();
 
         for (int i = 0; i < count; ++i) {
             auto* p = new Particle(
@@ -159,8 +146,6 @@ int main() {
         res.body = std::string("{\"status\":\"ok\",\"inserted\":") + std::to_string(count) + "}";
         return res;
     });
-
-
     // Endpoint para devolver el árbol
     CROW_ROUTE(app, "/tree").methods("GET"_method)([&tree](){
         try {
@@ -217,16 +202,10 @@ int main() {
         res.body = response.dump();
         return res;
     });
-
-
-
     // Nuevos -----------------------------------
 
     // Endpoint para vaciar el árbol
     CROW_ROUTE(app, "/clear").methods("POST"_method)([&tree, &nextId](){
-        logFile << "[ENDPOINT] Clear solicitado" << std::endl;
-        logFile.flush();
-
         tree.reset();
         nextId = 0;
 
@@ -235,8 +214,6 @@ int main() {
         res.body = "{\"status\":\"cleared\"}";
         return res;
     });
-
-
     // Endpoint para reconstruir el árbol con un conjunto de partículas
     CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
@@ -246,10 +223,6 @@ int main() {
             res.body = "{\"error\":\"invalid json, expected particles array\"}";
             return res;
         }
-
-        logFile << "[ENDPOINT] Rebuild con " << body["particles"].size() << " partículas" << std::endl;
-        logFile.flush();
-
         // Convertir JSON a vector de partículas
         std::vector<Particle> particles;
         for (auto& pj : body["particles"]) {
