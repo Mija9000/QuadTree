@@ -1,0 +1,137 @@
+.pro-simulation-page {
+  display: grid;
+  grid-template-columns: 390px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.pro-simulation-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pro-simulation-stage {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+}
+
+.pro-control-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.pro-stage-shell {
+  position: relative;
+  width: min(100%, 1080px);
+  height: min(78vh, 860px);
+  min-height: 640px;
+  border-radius: 26px;
+  overflow: hidden;
+  border: 1px solid rgba(140, 180, 210, 0.22);
+  box-shadow: 0 32px 90px rgba(2, 6, 23, 0.52);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.1) 16%, transparent 34%),
+    linear-gradient(180deg, #c8ecff 0%, #86d1ff 20%, #7ab96f 74%, #40663d 100%);
+}
+
+.pro-overlay-controls {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 3;
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(7, 18, 31, 0.38);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 34px rgba(2, 6, 23, 0.28);
+}
+
+.pro-overlay-controls .primary-action,
+.pro-overlay-controls .secondary-action,
+.pro-overlay-controls .tertiary-action {
+  min-width: 110px;
+}
+
+.pro-stage-shell::before,
+.pro-stage-shell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pro-stage-shell::before {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.28), transparent 18%),
+    radial-gradient(circle at 70% 14%, rgba(255, 255, 255, 0.2), transparent 20%),
+    radial-gradient(circle at 82% 32%, rgba(255, 255, 255, 0.16), transparent 18%);
+  mix-blend-mode: screen;
+}
+
+.pro-stage-shell::after {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 18%, transparent 76%, rgba(26, 49, 25, 0.32));
+}
+
+.pro-simulation-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.28), transparent 30%),
+    radial-gradient(circle at 78% 22%, rgba(255, 255, 255, 0.14), transparent 22%),
+    linear-gradient(180deg, rgba(210, 241, 255, 0.7), rgba(134, 209, 255, 0.24) 30%, rgba(129, 186, 108, 0.12) 72%, rgba(71, 112, 58, 0.36));
+}
+
+.pro-simulation-host {
+  position: absolute;
+  inset: 0;
+}
+
+.pro-simulation-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+@media (max-width: 1100px) {
+  .pro-simulation-page {
+    grid-template-columns: 1fr;
+  }
+
+  .pro-stage-shell {
+    width: 100%;
+    min-height: 580px;
+  }
+}
+
+@media (max-width: 700px) {
+  .pro-overlay-controls {
+    left: 12px;
+    top: 12px;
+    right: 12px;
+    flex-direction: column;
+  }
+
+  .pro-overlay-controls .primary-action,
+  .pro-overlay-controls .secondary-action,
+  .pro-overlay-controls .tertiary-action {
+    width: 100%;
+  }
+
+  .pro-control-row {
+    grid-template-columns: 1fr;
+  }
+
+  .pro-stage-shell {
+    min-height: 520px;
+  }
+}

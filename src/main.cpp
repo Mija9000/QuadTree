@@ -2,13 +2,14 @@
 #include "QuadTree.h"
 #include <nlohmann/json.hpp>
 #include <random>
+#include <memory>
 
 namespace {
 
 constexpr double kWorldX = 0.0;
 constexpr double kWorldY = 0.0;
-constexpr double kWorldW = 400.0;
-constexpr double kWorldH = 400.0;
+constexpr double kWorldW = 720.0;
+constexpr double kWorldH = 720.0;
 
 std::mt19937& rng() {
     static std::mt19937 generator{std::random_device{}()};
@@ -87,12 +88,13 @@ int main() {
     crow::App<CORSMiddleware> app;
 
     QuadTree tree({kWorldX, kWorldY, kWorldW, kWorldH}, 4);
+    std::vector<std::unique_ptr<Particle>> ownedParticles;
     int nextId = 0; // contador global de IDs
 
 
 
     // Endpoint para insertar partículas
-    CROW_ROUTE(app, "/insert").methods("POST"_method)([&tree, &nextId](const crow::request& req){
+    CROW_ROUTE(app, "/insert").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body) {
             crow::response res(400);
@@ -104,7 +106,8 @@ int main() {
         double x = body["x"].d();
         double y = body["y"].d();
 
-        Particle* p = new Particle(nextId++, x, y, 0.0, 0.0, 1.0);
+        ownedParticles.push_back(std::make_unique<Particle>(nextId++, x, y, 0.0, 0.0, 1.0));
+        Particle* p = ownedParticles.back().get();
         tree.insert(p);
 
         crow::response res(200);
@@ -112,7 +115,7 @@ int main() {
         res.body = "{\"status\":\"ok\"}";
         return res;
     });
-    CROW_ROUTE(app, "/bulk-insert").methods("POST"_method)([&tree, &nextId](const crow::request& req){
+    CROW_ROUTE(app, "/bulk-insert").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body || !body.has("count")) {
             crow::response res(400);
@@ -130,14 +133,15 @@ int main() {
         }
 
         for (int i = 0; i < count; ++i) {
-            auto* p = new Particle(
+            ownedParticles.push_back(std::make_unique<Particle>(
                 nextId++,
                 randomDouble(kWorldX, kWorldX + kWorldW),
                 randomDouble(kWorldY, kWorldY + kWorldH),
                 0.0,
                 0.0,
                 1.0
-            );
+            ));
+            auto* p = ownedParticles.back().get();
             tree.insert(p);
         }
 
@@ -205,8 +209,9 @@ int main() {
     // Nuevos -----------------------------------
 
     // Endpoint para vaciar el árbol
-    CROW_ROUTE(app, "/clear").methods("POST"_method)([&tree, &nextId](){
+    CROW_ROUTE(app, "/clear").methods("POST"_method)([&tree, &ownedParticles, &nextId](){
         tree.reset();
+        ownedParticles.clear();
         nextId = 0;
 
         crow::response res(200);
@@ -215,7 +220,7 @@ int main() {
         return res;
     });
     // Endpoint para reconstruir el árbol con un conjunto de partículas
-    CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &nextId](const crow::request& req){
+    CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body || !body.has("particles")) {
             crow::response res(400);
@@ -223,34 +228,33 @@ int main() {
             res.body = "{\"error\":\"invalid json, expected particles array\"}";
             return res;
         }
-        // Convertir JSON a vector de partículas
-        std::vector<Particle> particles;
+        tree.reset();
+        ownedParticles.clear();
+
         for (auto& pj : body["particles"]) {
-            Particle p(
+            ownedParticles.push_back(std::make_unique<Particle>(
                 pj["id"].i(),
                 pj["x"].d(),
                 pj["y"].d(),
                 pj["vx"].d(),
                 pj["vy"].d(),
                 pj["radius"].d()
-            );
-            particles.push_back(p);
+            ));
+            tree.insert(ownedParticles.back().get());
         }
 
-        tree.rebuild(particles);
-
         nextId = 0;
-        if (!particles.empty()) {
-            for (const auto& particle : particles) {
-                if (particle.id >= nextId) {
-                    nextId = particle.id + 1;
+        if (!ownedParticles.empty()) {
+            for (const auto& particle : ownedParticles) {
+                if (particle->id >= nextId) {
+                    nextId = particle->id + 1;
                 }
             }
         }
 
         crow::response res(200);
         res.set_header("Content-Type", "application/json");
-        res.body = "{\"status\":\"rebuilt\",\"count\":" + std::to_string(particles.size()) + "}";
+        res.body = "{\"status\":\"rebuilt\",\"count\":" + std::to_string(ownedParticles.size()) + "}";
         return res;
     });
 
