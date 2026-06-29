@@ -189,6 +189,210 @@ const cloneDroneModel = (model: THREE.Group) => {
   return clone;
 };
 
+const createCanvasTexture = (
+  draw: (context: CanvasRenderingContext2D, size: number) => void,
+  size = 1024,
+  repeat = 1
+) => {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  draw(context, size);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat, repeat);
+  (texture as any).anisotropy = 8;
+  return texture;
+};
+
+const createSkyGradientTexture = () =>
+  createCanvasTexture((context, size) => {
+    const gradient = context.createLinearGradient(0, 0, 0, size);
+    gradient.addColorStop(0, "#dff4ff");
+    gradient.addColorStop(0.45, "#9fd4ef");
+    gradient.addColorStop(0.8, "#8abfe2");
+    gradient.addColorStop(1, "#d8e8ef");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, size, size);
+
+    for (let index = 0; index < 180; index += 1) {
+      const x = Math.random() * size;
+      const y = Math.random() * size * 0.5;
+      const radius = 26 + Math.random() * 70;
+      const alpha = 0.08 + Math.random() * 0.12;
+      const cloud = context.createRadialGradient(x, y, radius * 0.1, x, y, radius);
+      cloud.addColorStop(0, `rgba(255,255,255,${alpha})`);
+      cloud.addColorStop(1, "rgba(255,255,255,0)");
+      context.fillStyle = cloud;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+  }, 1024, 1);
+
+const createGroundHeightGeometry = () => {
+  const groundSize = 2200;
+  const segments = 160;
+  const geometry = new (THREE as any).PlaneGeometry(groundSize, groundSize, segments, segments);
+  const positions = geometry.attributes.position.array as Float32Array;
+
+  for (let index = 0; index < positions.length; index += 3) {
+    const x = positions[index];
+    const y = positions[index + 1];
+    const ridgeA = Math.sin(x * 0.0028) * Math.cos(y * 0.0024) * 32;
+    const ridgeB = Math.sin(x * 0.009 + y * 0.005) * 10;
+    const ridgeC = Math.cos(x * 0.016) * Math.sin(y * 0.012) * 5;
+    positions[index + 2] = ridgeA + ridgeB + ridgeC;
+  }
+
+  geometry.computeVertexNormals();
+
+  const colors = new Float32Array(positions.length);
+  for (let index = 0; index < positions.length; index += 3) {
+    const height = positions[index + 2];
+    const blend = clamp((height + 38) / 76, 0, 1);
+    colors[index] = 0.09 + blend * 0.07;
+    colors[index + 1] = 0.2 + blend * 0.26;
+    colors[index + 2] = 0.08 + blend * 0.06;
+  }
+
+  geometry.setAttribute("color", new (THREE as any).BufferAttribute(colors, 3));
+  return geometry;
+};
+
+const createTerrain = () => {
+  const geometry = createGroundHeightGeometry();
+  const grassTexture = createCanvasTexture((context, size) => {
+    context.fillStyle = "#3a6134";
+    context.fillRect(0, 0, size, size);
+
+    for (let index = 0; index < 12000; index += 1) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const r = 1 + Math.random() * 2.5;
+      const green = 75 + Math.random() * 80;
+      context.fillStyle = `rgba(${30 + Math.random() * 20}, ${green}, ${20 + Math.random() * 15}, 0.16)`;
+      context.beginPath();
+      context.arc(x, y, r, 0, Math.PI * 2);
+      context.fill();
+    }
+  }, 1024, 18);
+
+  const rockTexture = createCanvasTexture((context, size) => {
+    context.fillStyle = "#74797f";
+    context.fillRect(0, 0, size, size);
+    for (let index = 0; index < 8000; index += 1) {
+      const x = Math.random() * size;
+      const y = Math.random() * size;
+      const shade = 105 + Math.random() * 60;
+      const alpha = 0.06 + Math.random() * 0.08;
+      context.fillStyle = `rgba(${shade}, ${shade}, ${shade}, ${alpha})`;
+      context.fillRect(x, y, 2 + Math.random() * 5, 1 + Math.random() * 3);
+    }
+  }, 1024, 6);
+
+  const terrainMaterial = new THREE.MeshStandardMaterial({
+    color: 0x557d4c,
+    map: grassTexture ?? undefined,
+    roughness: 1,
+    metalness: 0,
+    vertexColors: true,
+  });
+
+  const terrain = new THREE.Mesh(geometry, terrainMaterial);
+  terrain.rotation.x = -Math.PI / 2;
+  terrain.position.y = -26;
+  terrain.receiveShadow = true;
+
+  const rockBand = new THREE.Mesh(
+    geometry.clone(),
+    new THREE.MeshStandardMaterial({
+      color: 0x67736a,
+      map: rockTexture ?? undefined,
+      roughness: 1,
+      metalness: 0,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.22,
+    })
+  );
+  rockBand.rotation.x = -Math.PI / 2;
+  rockBand.position.y = -14;
+  rockBand.receiveShadow = true;
+
+  const group = new THREE.Group();
+  group.add(terrain);
+  group.add(rockBand);
+  return group;
+};
+
+const createMountain = (radius: number, height: number, color: number) => {
+  const group = new THREE.Group();
+  const geo = new (THREE as any).DodecahedronGeometry(radius, 1);
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.9,
+    metalness: 0.02,
+    flatShading: true,
+    emissive: new THREE.Color(color).multiplyScalar(0.03),
+  });
+
+  const mountain = new THREE.Mesh(geo, material);
+  mountain.scale.set(1.5, height, 1.5);
+  mountain.position.y = 0;
+  mountain.castShadow = true;
+  mountain.receiveShadow = true;
+  group.add(mountain);
+
+  const snowGeo = new (THREE as any).DodecahedronGeometry(radius * 0.3, 0);
+  const snowMat = new THREE.MeshStandardMaterial({
+    color: 0xf3f8fb,
+    roughness: 0.7,
+    metalness: 0,
+    flatShading: true,
+  });
+  const snow = new THREE.Mesh(snowGeo, snowMat);
+  snow.scale.set(0.72, height * 0.48, 0.72);
+  snow.position.set(0, radius * 0.8, 0);
+  snow.castShadow = true;
+  group.add(snow);
+
+  return group;
+};
+
+const createCloud = (x: number, y: number, z: number, scale: number) => {
+  const group = new THREE.Group();
+  const cloudMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.34,
+  });
+
+  const parts = [
+    { x: 0, y: 0, z: 0, s: 1 },
+    { x: 22, y: 4, z: -12, s: 0.72 },
+    { x: -16, y: -2, z: 8, s: 0.6 },
+    { x: 10, y: -6, z: 16, s: 0.54 },
+    { x: -10, y: 6, z: -14, s: 0.6 },
+  ];
+
+  parts.forEach((part) => {
+    const cloudPart = new THREE.Mesh(new THREE.SphereGeometry(30 * part.s, 8, 8), cloudMat);
+    cloudPart.position.set(part.x, part.y, part.z);
+    cloudPart.scale.set(1, 0.32, 0.62);
+    group.add(cloudPart);
+  });
+
+  group.position.set(x, y, z);
+  group.scale.setScalar(scale);
+  return group;
+};
+
 const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }) => {
   const { x, y, w, h } = boundary;
   const corners = [
@@ -591,9 +795,11 @@ const UltimateSimulation: React.FC = () => {
     scene.background = new THREE.Color(0x87cfff);
     sceneRef.current = scene;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" as any });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    (renderer as any).toneMapping = (THREE as any).ACESFilmicToneMapping;
+    (renderer as any).toneMappingExposure = 1.2;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = (THREE as any).PCFSoftShadowMap;
     renderer.setClearColor(0x87cfff, 1);
@@ -637,47 +843,123 @@ const UltimateSimulation: React.FC = () => {
     sun.shadow.camera.bottom = -700;
     scene.add(sun);
 
-    const skyDome = new THREE.Mesh(
-      new THREE.SphereGeometry(2400, 24, 16),
-      new THREE.MeshBasicMaterial({ color: 0x87cfff, side: (THREE as any).BackSide, transparent: true, opacity: 0.12 })
-    );
-    scene.add(skyDome);
+    scene.background = new THREE.Color(0x9ed6ef);
+    scene.fog = new THREE.Fog(0xc8e3ef, 380, 4200);
 
-    const groundGeometry = new (THREE as any).PlaneGeometry(1600, 1600, 48, 48);
-    const groundPositions = groundGeometry.attributes.position.array as Float32Array;
-    for (let index = 0; index < groundPositions.length; index += 3) {
-      const x = groundPositions[index];
-      const y = groundPositions[index + 1];
-      groundPositions[index + 2] = Math.sin(x * 0.01) * 2 + Math.cos(y * 0.014) * 1.4;
-    }
-    groundGeometry.computeVertexNormals();
-    const groundMaterial = new THREE.MeshStandardMaterial({ color: 0x2f5b3e, roughness: 1, metalness: 0 });
-    const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -8;
-    ground.receiveShadow = true;
-    scene.add(ground);
+    const landscapeGroup = new THREE.Group();
+    scene.add(landscapeGroup);
 
-    const mountains = new THREE.Group();
-    for (let index = 0; index < 14; index += 1) {
-      const angle = (index / 14) * Math.PI * 2;
-      const radius = 240 + (index % 4) * 28;
-      const peak = new THREE.Mesh(
-        new THREE.OctahedronGeometry(18 + (index % 4) * 3, 1),
-        new THREE.MeshStandardMaterial({
-          color: index % 2 === 0 ? 0x486b57 : 0x3e5f4f,
-          roughness: 0.92,
-          metalness: 0,
-          flatShading: true,
-        })
-      );
-      peak.position.set(Math.cos(angle) * radius, 16 + (index % 4) * 4, Math.sin(angle) * radius);
-      peak.scale.set(2.5, 2.2 + (index % 4) * 0.18, 2.5);
-      peak.castShadow = true;
-      peak.receiveShadow = true;
-      mountains.add(peak);
-    }
-    scene.add(mountains);
+    const landscapeLoader = new GLTFLoader();
+    const fitAndPlaceLandscape = async (
+      url: string,
+      targetSize: number,
+      position: { x: number; y: number; z: number },
+      rotation: { x: number; y: number; z: number }
+    ) => {
+      try {
+        const gltf = await landscapeLoader.loadAsync(url);
+        const model = gltf.scene as THREE.Group;
+        const box = new (THREE as any).Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+
+        model.position.x -= center.x;
+        model.position.y -= center.y;
+        model.position.z -= center.z;
+        configureDroneModel(model);
+
+        const longestSide = Math.max(size.x, size.y, size.z) || 1;
+        const scale = targetSize / longestSide;
+        model.scale.setScalar(scale);
+        model.position.set(position.x, position.y, position.z);
+        (model.rotation as any).x = rotation.x;
+        (model.rotation as any).y = rotation.y;
+        (model.rotation as any).z = rotation.z;
+        landscapeGroup.add(model);
+
+        return model;
+      } catch (error) {
+        console.error(`Error cargando paisaje ${url}`, error);
+        return null;
+      }
+    };
+
+    const placeSky = async () => {
+      const sky = await fitAndPlaceLandscape("/models/sky.glb", 18000, { x: 0, y: -360, z: 0 }, { x: 0, y: 0, z: 0 });
+      if (!sky) return;
+
+      sky.scale.set(sky.scale.x * 1.8, sky.scale.y * 1.8, sky.scale.z * 1.8);
+      sky.position.y = -520;
+    };
+
+    void placeSky();
+
+    const placeField = async () => {
+      console.log("Loading field.glb...");
+      const field = await fitAndPlaceLandscape("/models/field.glb", 2000, { x: 0, y: -30, z: 0 }, { x: 0, y: 0, z: 0 });
+      if (!field) {
+        console.error("Could not load field.glb");
+        return;
+      }
+
+      const maxAnisotropy = (renderer as any).capabilities?.getMaxAnisotropy?.() ?? 16;
+      field.traverse((child) => {
+        const mesh = child as any;
+        if (!mesh || !(mesh.type === "Mesh" || mesh.isMesh)) {
+          return;
+        }
+
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        materials.forEach((material: any) => {
+          if (!material) return;
+          material.transparent = false;
+          material.opacity = 1;
+          material.roughness = 0.8;
+          material.metalness = 0;
+
+          const textureSlots = [
+            material.map,
+            material.normalMap,
+            material.roughnessMap,
+            material.metalnessMap,
+            material.aoMap,
+            material.emissiveMap,
+            material.bumpMap,
+            material.displacementMap,
+          ];
+
+          textureSlots.forEach((texture: any) => {
+            if (!texture) return;
+            texture.anisotropy = maxAnisotropy;
+            texture.minFilter = (THREE as any).LinearMipmapLinearFilter;
+            texture.magFilter = (THREE as any).LinearFilter;
+            texture.generateMipmaps = true;
+            texture.needsUpdate = true;
+
+            console.log("Texture configured:", texture.image?.width, "x", texture.image?.height);
+          });
+
+          material.needsUpdate = true;
+        });
+      });
+
+      field.rotation.x = 0;
+      field.rotation.y = 0;
+      field.rotation.z = 0;
+      field.position.y = -300;
+
+      console.log("Field loaded correctly");
+      console.log("Position:", field.position);
+      console.log("Scale:", field.scale);
+      console.log("Rotation:", field.rotation);
+    };
+
+    void placeField();
 
     const quadtreeGroup = new THREE.Group();
     quadtreeGroup.visible = showQuadtreeRef.current;

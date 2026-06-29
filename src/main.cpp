@@ -41,6 +41,10 @@ bool readRange(const crow::json::rvalue& body, AABB& range) {
     return range.w > 0.0 && range.h > 0.0;
 }
 
+bool readBoundary(const crow::json::rvalue& body, AABB& boundary) {
+    return readRange(body, boundary);
+}
+
 } // namespace
 
 namespace {
@@ -217,6 +221,42 @@ int main() {
         crow::response res(200);
         res.set_header("Content-Type", "application/json");
         res.body = "{\"status\":\"cleared\"}";
+        return res;
+    });
+
+    CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid json\"}";
+            return res;
+        }
+
+        AABB boundary;
+        if (!readBoundary(body, boundary)) {
+            crow::response res(400);
+            res.set_header("Content-Type", "application/json");
+            res.body = "{\"error\":\"invalid boundary\"}";
+            return res;
+        }
+
+        tree.reset(boundary);
+        ownedParticles.clear();
+        nextId = 0;
+
+        nlohmann::json response;
+        response["status"] = "boundary-set";
+        response["boundary"] = {
+            {"x", boundary.x},
+            {"y", boundary.y},
+            {"w", boundary.w},
+            {"h", boundary.h}
+        };
+
+        crow::response res(200);
+        res.set_header("Content-Type", "application/json");
+        res.body = response.dump();
         return res;
     });
     // Endpoint para reconstruir el árbol con un conjunto de partículas

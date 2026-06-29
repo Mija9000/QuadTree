@@ -17,6 +17,13 @@ void QuadTree::reset() {
     root = new QuadNode(boundary, capacity);
 }
 
+// Reset con boundary nuevo
+void QuadTree::reset(const AABB& newBoundary) {
+    clear(root);
+    boundary = newBoundary;
+    root = new QuadNode(boundary, capacity);
+}
+
 // elimina todo el árbol completo del heap O(n) exacto
 void QuadTree::clear(QuadNode* node) {
     if (!node) return;

@@ -19,6 +19,7 @@ public:
     void query(const AABB& range, std::vector<Particle*>& result, int& comparisons);
     void rebuild(std::vector<Particle>& particles);
     void reset();
+    void reset(const AABB& newBoundary);
 
     void clear(QuadNode* node);
 
