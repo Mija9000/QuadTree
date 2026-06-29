@@ -58,15 +58,9 @@ const TreeVisualizer: React.FC = () => {
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [customBoundary, setCustomBoundary] = useState({ x: 0, y: 0, w: 720, h: 720 });
   const [quadrantSize, setQuadrantSize] = useState<number>(1000);
-  const [insertStats, setInsertStats] = useState<{
-  count: number;
-  timeMs: number;
-  comparisons?: number;
-} | null>(null);
-const [bruteForceResult, setBruteForceResult] = useState<{
-  count: number;
-  timeMs: number;
-} | null>(null);
+  const [insertStats, setInsertStats] = useState<{count: number;timeMs: number;comparisons?: number;} | null>(null);
+  const [bruteForceResults, setBruteForceResults] = useState<{count: number;timeMs: number;particles: number;}[]>([]);
+  const [bruteForceResult, setBruteForceResult] = useState<{count: number;timeMs: number;} | null>(null);
 
   const WORLD_SIZE = 400;
   const canvasSize = { width: 560, height: 560 } as const;
@@ -281,6 +275,56 @@ const [bruteForceResult, setBruteForceResult] = useState<{
       console.error("Error al dibujar árbol:", err);
     }
   }, [tree, queryResult]);
+
+
+  const handleBruteForceTest = async (testSize: number) => {
+  try {
+    setLoading(true);
+    setError(null);
+
+    const startTime = performance.now();
+    let counter = 0;
+    
+    // 🔥 SIMULAR BUCLE ANIDADO CON LÍMITE DE 5 SEGUNDOS
+    const MAX_TIME_MS = 5000;
+    
+    for (let i = 0; i < testSize; i++) {
+      for (let j = 0; j < testSize; j++) {
+        counter++;
+        // Si pasa mucho tiempo, salir para no congelar
+        if (counter % 1000000 === 0) {
+          const currentTime = performance.now();
+          if (currentTime - startTime > MAX_TIME_MS) {
+            console.warn(`⏱️ Límite de tiempo alcanzado en ${testSize} (${counter.toLocaleString()} iteraciones)`);
+            break;
+          }
+        }
+      }
+      if (performance.now() - startTime > MAX_TIME_MS) break;
+    }
+    
+    const endTime = performance.now();
+    const elapsedMs = endTime - startTime;
+
+    setBruteForceResults(prev => [
+      ...prev,
+      {
+        count: counter,
+        timeMs: elapsedMs,
+        particles: testSize,
+      }
+    ]);
+
+    console.log(`🧪 FB ${testSize}: ${counter.toLocaleString()} iteraciones en ${elapsedMs.toFixed(3)} ms`);
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en fuerza bruta:", err);
+    setError(`Error en fuerza bruta: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // para simular fuerza bruta para la comparación
   const handleBruteForceQuery = async () => {
@@ -796,62 +840,63 @@ const [bruteForceResult, setBruteForceResult] = useState<{
                 </div>
 
                 {/* 🔥 BOTÓN DE FUERZA BRUTA */}
-                <div style={{ marginTop: "8px" }}>
+                
+                <div style={{ marginTop: "8px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   <button 
                     onClick={handleBruteForceQuery} 
                     className="insert-button secondary-button" 
                     disabled={loading || !tree}
-                    style={{ 
-                      background: "#e67e22", 
-                      color: "white",
-                      border: "none"
-                    }}
+                    style={{ background: "#e67e22", color: "white", border: "none" }}
                   >
-                    🧪 Probar Fuerza Bruta
+                    🧪 FB
                   </button>
-                </div>
-              </div>
-
-              <div className="query-panel query-panel-wide">
-                <h3>Consultas</h3>
-                <div className="query-grid">
-                  <label>
-                    X
-                    <input
-                      type="number"
-                      value={queryRange.x}
-                      onChange={(event) => setQueryRange((previous) => ({ ...previous, x: Number(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    Y
-                    <input
-                      type="number"
-                      value={queryRange.y}
-                      onChange={(event) => setQueryRange((previous) => ({ ...previous, y: Number(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    W
-                    <input
-                      type="number"
-                      value={queryRange.w}
-                      onChange={(event) => setQueryRange((previous) => ({ ...previous, w: Number(event.target.value) }))}
-                    />
-                  </label>
-                  <label>
-                    H
-                    <input
-                      type="number"
-                      value={queryRange.h}
-                      onChange={(event) => setQueryRange((previous) => ({ ...previous, h: Number(event.target.value) }))}
-                    />
-                  </label>
-                </div>
-
-                <div className="controls query-actions">
-                  <button onClick={() => handleQuery(queryRange)} className="insert-button secondary-button" disabled={loading}>
-                    Consultar rango
+                  <button 
+                    onClick={() => handleBruteForceTest(100)} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ background: "#e67e22", color: "white", border: "none", fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    100
+                  </button>
+                  <button 
+                    onClick={() => handleBruteForceTest(1000)} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ background: "#e67e22", color: "white", border: "none", fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    1K
+                  </button>
+                  <button 
+                    onClick={() => handleBruteForceTest(10000)} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ background: "#e67e22", color: "white", border: "none", fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    10K
+                  </button>
+                  <button 
+                    onClick={() => handleBruteForceTest(100000)} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ background: "#e67e22", color: "white", border: "none", fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    100K
+                  </button>
+                  <button 
+                    onClick={() => handleBruteForceTest(1000000)} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ background: "#e67e22", color: "white", border: "none", fontSize: "11px", padding: "4px 8px" }}
+                  >
+                    1M
+                  </button>
+                  <button 
+                    onClick={() => setBruteForceResults([])} 
+                    className="insert-button secondary-button" 
+                    disabled={loading}
+                    style={{ fontSize: "11px", padding: "4px 8px", background: "#dc3545", color: "white", border: "none" }}
+                  >
+                    Limpiar
                   </button>
                 </div>
 
@@ -924,6 +969,38 @@ const [bruteForceResult, setBruteForceResult] = useState<{
                     <div>⏱️ Tiempo: {bruteForceResult.timeMs.toFixed(2)} ms</div>
                     <div style={{ fontSize: "12px", color: "#7f8c8d", marginTop: "4px" }}>
                       (Revisó todas las partículas una por una)
+                    </div>
+                  </div>
+                )}
+
+                {/* 🔥 RESULTADOS DE MÚLTIPLES PRUEBAS DE FUERZA BRUTA */}
+                {bruteForceResults.length > 0 && (
+                  <div className="query-result-box" style={{ 
+                    marginTop: "8px", 
+                    borderColor: "#e67e22",
+                    background: "#fef9e7"
+                  }}>
+                    <div style={{ fontWeight: "bold", color: "#e67e22" }}>📊 Resultados Fuerza Bruta (múltiples)</div>
+                    <table style={{ width: "100%", fontSize: "12px", borderCollapse: "collapse", marginTop: "4px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid #ddd" }}>
+                          <th style={{ textAlign: "left", padding: "4px" }}>Partículas</th>
+                          <th style={{ textAlign: "left", padding: "4px" }}>Encontradas</th>
+                          <th style={{ textAlign: "left", padding: "4px" }}>Tiempo (ms)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...bruteForceResults].sort((a, b) => a.particles - b.particles).map((result, index) => (
+                          <tr key={index} style={{ borderBottom: "1px solid #eee" }}>
+                            <td style={{ padding: "4px" }}>{result.particles.toLocaleString()}</td>
+                            <td style={{ padding: "4px" }}>{result.count}</td>
+                            <td style={{ padding: "4px" }}>{result.timeMs.toFixed(3)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ fontSize: "11px", color: "#7f8c8d", marginTop: "4px" }}>
+                      (Revisa partículas una por una)
                     </div>
                   </div>
                 )}

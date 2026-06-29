@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { getTree, queryTree } from "../services/api";
+import { getTree, queryTree, setTreeBoundary } from "../services/api";
 import { rebuildSimulationTree, SimulationParticle } from "../services/simulationApi";
 import "../styles/DroneSimulation.css";
+
 
 interface Drone extends SimulationParticle {
   safetyRadius: number;
@@ -44,7 +45,7 @@ const randomBetween = (min: number, max: number) => min + Math.random() * (max -
 
 const clampDroneCount = (value: number) => Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
 
-const createDrone = (id: number): Drone => {
+const createDrone = (id: number, worldSize: number): Drone => {
   const angle = randomBetween(0, Math.PI * 2);
   const speed = randomBetween(36, 62);
   const safetyRadius = randomBetween(26, 38);
@@ -52,8 +53,8 @@ const createDrone = (id: number): Drone => {
 
   return {
     id,
-    x: randomBetween(radius + 6, WORLD_SIZE - radius - 6),
-    y: randomBetween(radius + 6, WORLD_SIZE - radius - 6),
+    x: randomBetween(radius + 6, worldSize - radius - 6),
+    y: randomBetween(radius + 6, worldSize - radius - 6),
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     radius,
@@ -64,13 +65,13 @@ const createDrone = (id: number): Drone => {
   };
 };
 
-const createFleet = (count: number) =>
-  Array.from({ length: clampDroneCount(count) }, (_, index) => createDrone(index));
+const createFleet = (count: number, worldSize: number) =>
+  Array.from({ length: clampDroneCount(count) }, (_, index) => createDrone(index, worldSize));
 
 const appendTrail = (trail: Array<{ x: number; y: number }>, point: { x: number; y: number }) =>
   [...trail, point].slice(-TRAIL_LIMIT);
 
-const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
+const moveDrone = (drone: Drone, deltaSeconds: number, worldSize: number): Drone => {
   let x = drone.x + drone.vx * deltaSeconds;
   let y = drone.y + drone.vy * deltaSeconds;
   let vx = drone.vx;
@@ -79,16 +80,16 @@ const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
   if (x - drone.radius < 0) {
     x = drone.radius;
     vx = Math.abs(vx);
-  } else if (x + drone.radius > WORLD_SIZE) {
-    x = WORLD_SIZE - drone.radius;
+  } else if (x + drone.radius > worldSize) {
+    x = worldSize - drone.radius;
     vx = -Math.abs(vx);
   }
 
   if (y - drone.radius < 0) {
     y = drone.radius;
     vy = Math.abs(vy);
-  } else if (y + drone.radius > WORLD_SIZE) {
-    y = WORLD_SIZE - drone.radius;
+  } else if (y + drone.radius > worldSize) {
+    y = worldSize - drone.radius;
     vy = -Math.abs(vy);
   }
 
@@ -103,12 +104,12 @@ const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
   };
 };
 
-const queryRangeForDrone = (drone: Drone) => {
+const queryRangeForDrone = (drone: Drone, worldSize: number) => {
   const padding = drone.safetyRadius;
-  const x = clamp(drone.x - padding, 0, WORLD_SIZE);
-  const y = clamp(drone.y - padding, 0, WORLD_SIZE);
-  const w = clamp(padding * 2, 1, WORLD_SIZE - x);
-  const h = clamp(padding * 2, 1, WORLD_SIZE - y);
+  const x = clamp(drone.x - padding, 0, worldSize);
+  const y = clamp(drone.y - padding, 0, worldSize);
+  const w = clamp(padding * 2, 1, worldSize - x);
+  const h = clamp(padding * 2, 1, worldSize - y);
 
   return { x, y, w, h };
 };
@@ -141,7 +142,8 @@ const DroneSimulation: React.FC = () => {
   const stepInProgressRef = useRef(false);
 
   const [droneCount, setDroneCount] = useState<number>(12);
-  const dronesRef = useRef<Drone[]>(createFleet(12));
+  const [worldSize, setWorldSize] = useState<number>(720);
+  const dronesRef = useRef<Drone[]>(createFleet(12, worldSize));
   const [drones, setDrones] = useState<Drone[]>(() => dronesRef.current);
   const [running, setRunning] = useState(false);
   const [tree, setTree] = useState<TreeNodeSnapshot | null>(null);
@@ -191,7 +193,7 @@ const DroneSimulation: React.FC = () => {
 
   const resetSimulation = async () => {
     stopSimulation();
-    const freshFleet = createFleet(droneCount);
+    const freshFleet = createFleet(droneCount, worldSize);
     dronesRef.current = freshFleet;
     setDrones(freshFleet);
     setTree(null);
@@ -222,11 +224,59 @@ const DroneSimulation: React.FC = () => {
     }
   };
 
+  const handleApplyBoundary = async () => {
+  try {
+    console.log("📡 Enviando setTreeBoundary con size:", worldSize);
+    
+    // 🔥 1. CAMBIAR EL BOUNDARY EN EL BACKEND
+    const response = await setTreeBoundary(worldSize);
+    console.log("✅ Respuesta del backend:", response);
+    
+    // 🔥 2. DETENER SIMULACIÓN
+    stopSimulation();
+    
+    // 🔥 3. CREAR NUEVA FLOTA
+    const freshFleet = createFleet(droneCount, worldSize);
+    dronesRef.current = freshFleet;
+    setDrones(freshFleet);
+    setTree(null);
+    setError(null);
+    setStats({
+      frame: 0,
+      comparisons: 0,
+      avoided: 0,
+      rebuildMs: 0,
+      fps: 0,
+      bruteForceComparisons: 0,
+      treeNodes: 0,
+      treeParticles: 0,
+    });
+
+    // 🔥 4. RECONSTRUIR EL ÁRBOL CON EL NUEVO BOUNDARY
+    await rebuildSimulationTree(freshFleet);
+    const initialTree = (await getTree()) as TreeNodeSnapshot;
+    console.log("🌳 Árbol recibido - boundary:", initialTree.boundary);
+    console.log("🌳 Árbol recibido - particles:", initialTree.particles?.length);
+    
+    setTree(initialTree);
+    setStats((previous) => ({
+      ...previous,
+      treeNodes: countNodes(initialTree),
+      treeParticles: countParticles(initialTree),
+    }));
+    
+    console.log(`✅ Mundo redimensionado a ${worldSize}x${worldSize}`);
+    
+  } catch (err) {
+    console.error("Error al cambiar tamaño:", err);
+  }
+};
+
   const startSimulation = async () => {
     if (runningRef.current) return;
 
     if (dronesRef.current.length === 0) {
-      const freshFleet = createFleet(droneCount);
+      const freshFleet = createFleet(droneCount, worldSize);
       dronesRef.current = freshFleet;
       setDrones(freshFleet);
     }
@@ -254,14 +304,14 @@ const DroneSimulation: React.FC = () => {
 
       stepInProgressRef.current = true;
       try {
-        const movedFleet = dronesRef.current.map((drone) => moveDrone(drone, deltaSeconds));
+        const movedFleet = dronesRef.current.map((drone) => moveDrone(drone, deltaSeconds, worldSize));
         const rebuildStart = performance.now();
         await rebuildSimulationTree(movedFleet.map(({ trail, status, color, safetyRadius, ...particle }) => particle));
         const rebuildMs = performance.now() - rebuildStart;
 
         const [treeSnapshot, queryResults] = await Promise.all([
           getTree() as Promise<TreeNodeSnapshot>,
-          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone)) as Promise<QueryResult>)),
+          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone, worldSize)) as Promise<QueryResult>)),
         ]);
 
         let totalComparisons = 0;
@@ -353,6 +403,7 @@ const DroneSimulation: React.FC = () => {
   useEffect(() => () => stopSimulation(), []);
 
   useEffect(() => {
+    console.log("Dibujando canvas con worldSize:", worldSize);
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -367,9 +418,14 @@ const DroneSimulation: React.FC = () => {
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     ctx.clearRect(0, 0, canvasSize.width, canvasSize.height);
 
-    const renderScale = Math.min((canvasSize.width - 40) / WORLD_SIZE, (canvasSize.height - 40) / WORLD_SIZE);
-    const renderOffsetX = (canvasSize.width - WORLD_SIZE * renderScale) / 2;
-    const renderOffsetY = (canvasSize.height - WORLD_SIZE * renderScale) / 2;
+    // 🔥 EL TAMAÑO VISUAL ES EL worldSize PERO ESCALADO PARA QUE QUEPA
+    const visualWorldSize = worldSize;
+    const renderScale = Math.min(
+      (canvasSize.width - 40) / visualWorldSize,
+      (canvasSize.height - 40) / visualWorldSize
+    );
+    const renderOffsetX = (canvasSize.width - visualWorldSize * renderScale) / 2;
+    const renderOffsetY = (canvasSize.height - visualWorldSize * renderScale) / 2;
 
     const background = ctx.createLinearGradient(0, 0, 0, canvasSize.height);
     background.addColorStop(0, "#08111f");
@@ -381,17 +437,21 @@ const DroneSimulation: React.FC = () => {
     ctx.translate(renderOffsetX, renderOffsetY);
     ctx.scale(renderScale, renderScale);
 
-    const gridSize = 40;
+    // 🔥 AHORA LAS COORDENADAS VAN DE 0 A worldSize (SIN NORMALIZAR)
+    // 🔥 GRID CON DENSIDAD VISUAL FIJA
+    const numberOfLines = 18; // ← NÚMERO DE LÍNEAS DESEADO
+    const gridStep = worldSize / numberOfLines;
+
     ctx.strokeStyle = "rgba(148, 163, 184, 0.12)";
     ctx.lineWidth = 1 / renderScale;
-    for (let offset = 0; offset <= WORLD_SIZE; offset += gridSize) {
+    for (let offset = 0; offset <= worldSize; offset += gridStep) {
       ctx.beginPath();
       ctx.moveTo(offset, 0);
-      ctx.lineTo(offset, WORLD_SIZE);
+      ctx.lineTo(offset, worldSize);
       ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(0, offset);
-      ctx.lineTo(WORLD_SIZE, offset);
+      ctx.lineTo(worldSize, offset);
       ctx.stroke();
     }
 
@@ -453,7 +513,7 @@ const DroneSimulation: React.FC = () => {
       ctx.fillText(`#${drone.id}`, drone.x + 10, drone.y - 10);
     }
     ctx.restore();
-  }, [canvasSize, drones, showQuadtree, showSafetyRings, showTrails, tree]);
+}, [canvasSize, drones, showQuadtree, showSafetyRings, showTrails, tree, worldSize]);
 
   const simulationState = running ? "En ejecución" : "Detenida";
   const handleDroneCountChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -475,6 +535,7 @@ const DroneSimulation: React.FC = () => {
 
         <div className="simulation-card controls-card">
           <div className="section-title">Control</div>
+          
           <label className="count-field">
             <span>Cantidad de drones</span>
             <input
@@ -482,8 +543,31 @@ const DroneSimulation: React.FC = () => {
               min={0}
               value={droneCount}
               onChange={handleDroneCountChange}
+              style={{maxWidth:"327px"}}
             />
           </label>
+          
+          {/* 🔥 NUEVO: INPUT PARA TAMAÑO DEL MUNDO */}
+          <label className="count-field" style={{ marginTop: "8px" }}>
+            <span>Tamaño del mundo (N x N)</span>
+            <input
+              type="number"
+              min={1}
+              value={worldSize}
+              onChange={(event) => setWorldSize(Math.max(1, Number(event.target.value || 1)))}
+              style={{ maxWidth: "327px" }}
+            />
+          </label>
+          
+          {/* 🔥 NUEVO: BOTÓN PARA APLICAR TAMAÑO */}
+          <button 
+            className="primary-action" 
+            onClick={handleApplyBoundary}
+            style={{ marginTop: "8px", marginBottom: "16px", width: "100%", padding:"12px" }}
+          >
+            🔄 Redimensionar mundo
+          </button>
+          
           <div className="control-row">
             <button className="primary-action" onClick={startSimulation} disabled={running}>
               Iniciar

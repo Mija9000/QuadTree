@@ -20,9 +20,9 @@
 }
 
 .pro-control-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex; /* ← CAMBIADO DE grid A flex */
   gap: 10px;
+  flex-wrap: wrap; /* ← PARA QUE LOS BOTONES BAJEN SI NO CABEN */
 }
 
 .pro-stage-shell {
@@ -128,10 +128,18 @@
   }
 
   .pro-control-row {
-    grid-template-columns: 1fr;
-  }
+  display: flex !important;
+  gap: 10px;
+  flex-wrap: wrap !important;
+}
 
   .pro-stage-shell {
     min-height: 520px;
   }
+
+  #pro-control-buttons {
+  display: flex !important;
+  gap: 10px;
+  flex-wrap: wrap !important;
+}
 }

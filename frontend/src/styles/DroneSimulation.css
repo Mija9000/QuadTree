@@ -51,7 +51,7 @@
 .control-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  gap: 16px;
 }
 
 .count-field {
@@ -90,10 +90,12 @@
 .tertiary-action {
   border: none;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 12px 18px;
   font-weight: 800;
   cursor: pointer;
   color: white;
+  width: 100%;
+  min-width: 100px;
 }
 
 .primary-action {

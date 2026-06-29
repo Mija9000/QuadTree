@@ -89,6 +89,9 @@ struct CORSMiddleware {
 int main() {
     crow::App<CORSMiddleware> app;
 
+    // 🔥 DECLARAR currentBoundary AQUÍ (como variable local)
+    AABB currentBoundary = {kWorldX, kWorldY, kWorldW, kWorldH};
+
     QuadTree tree({kWorldX, kWorldY, kWorldW, kWorldH}, 4);
     std::vector<std::unique_ptr<Particle>> ownedParticles;
     int nextId = 0; // contador global de IDs
@@ -228,53 +231,54 @@ int main() {
         return res;
     });
 
-    // Endpoint para cambiar el tamaño del mundo
-CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
-    auto body = crow::json::load(req.body);
-    if (!body) {
-        crow::response res(400);
+        // Endpoint para cambiar el tamaño del mundo
+    CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles, &nextId, &currentBoundary](const crow::request& req){
+        auto body = crow::json::load(req.body);
+        if (!body) {
+            crow::response res(400);
+            res.body = "{\"error\":\"invalid json\"}";
+            return res;
+        }
+
+        if (!body.has("size")) {
+            crow::response res(400);
+            res.body = "{\"error\":\"missing 'size' field\"}";
+            return res;
+        }
+
+        double size = body["size"].d();
+        std::cout << "📡 Recibido /set-boundary con size: " << size << std::endl;
+        
+        if (size <= 0) {
+            crow::response res(400);
+            res.body = "{\"error\":\"size must be greater than 0\"}";
+            return res;
+        }
+
+        currentBoundary = {0.0, 0.0, size, size};
+        tree.reset(currentBoundary);
+        ownedParticles.clear();
+        nextId = 0;
+
+        std::cout << "✅ Boundary cambiado a: " << size << "x" << size << std::endl;
+
+        nlohmann::json response;
+        response["status"] = "boundary-set";
+        response["boundary"] = {
+            {"x", 0.0},
+            {"y", 0.0},
+            {"w", size},
+            {"h", size}
+        };
+
+        crow::response res(200);
         res.set_header("Content-Type", "application/json");
-        res.body = "{\"error\":\"invalid json\"}";
+        res.body = response.dump();
         return res;
-    }
+    });
 
-    if (!body.has("size")) {
-        crow::response res(400);
-        res.set_header("Content-Type", "application/json");
-        res.body = "{\"error\":\"missing 'size' field\"}";
-        return res;
-    }
-
-    double size = body["size"].d();
-    if (size <= 0) {
-        crow::response res(400);
-        res.set_header("Content-Type", "application/json");
-        res.body = "{\"error\":\"size must be greater than 0\"}";
-        return res;
-    }
-
-    AABB boundary = {0.0, 0.0, size, size};
-
-    tree.reset(boundary);
-    ownedParticles.clear();
-    nextId = 0;
-
-    nlohmann::json response;
-    response["status"] = "boundary-set";
-    response["boundary"] = {
-        {"x", 0.0},
-        {"y", 0.0},
-        {"w", size},
-        {"h", size}
-    };
-
-    crow::response res(200);
-    res.set_header("Content-Type", "application/json");
-    res.body = response.dump();
-    return res;
-});
     // Endpoint para reconstruir el árbol con un conjunto de partículas
-    CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
+    CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &ownedParticles, &nextId, &currentBoundary](const crow::request& req){
         auto body = crow::json::load(req.body);
         if (!body || !body.has("particles")) {
             crow::response res(400);
@@ -282,7 +286,9 @@ CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles,
             res.body = "{\"error\":\"invalid json, expected particles array\"}";
             return res;
         }
-        tree.reset();
+        
+        // 🔥 USAR currentBoundary CAPTURADO
+        tree.reset(currentBoundary);
         ownedParticles.clear();
 
         for (auto& pj : body["particles"]) {
@@ -311,8 +317,6 @@ CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles,
         res.body = "{\"status\":\"rebuilt\",\"count\":" + std::to_string(ownedParticles.size()) + "}";
         return res;
     });
-    
-
 
     app.port(8080).multithreaded().run();
 }

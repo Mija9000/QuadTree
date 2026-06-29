@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader";
-import { getTree, queryTree } from "../services/api";
+import { getTree, queryTree, setTreeBoundary } from "../services/api";
 import { rebuildSimulationTree, SimulationParticle } from "../services/simulationApi";
 import "../styles/ProSimulation.css";
 
@@ -62,14 +62,14 @@ type DroneVisual = {
   propellers: THREE.Object3D[];
 };
 
-const WORLD_SIZE = 720;
+const WORLD_SIZE = 720; // ← CONSTANTE GLOBAL por defecto
 const SKY_COLOR = "#84d8ff";
 const INTERPOLATION_MS = 260;
 const POLL_MS = 250;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-const moveDrone = (drone: ParticleSnapshot, deltaSeconds: number): ParticleSnapshot => {
+const moveDrone = (drone: ParticleSnapshot, deltaSeconds: number, worldSize: number): ParticleSnapshot => {
   let x = drone.x + drone.vx * deltaSeconds;
   let y = drone.y + drone.vy * deltaSeconds;
   let vx = drone.vx;
@@ -78,34 +78,28 @@ const moveDrone = (drone: ParticleSnapshot, deltaSeconds: number): ParticleSnaps
   if (x - drone.radius < 0) {
     x = drone.radius;
     vx = Math.abs(vx);
-  } else if (x + drone.radius > WORLD_SIZE) {
-    x = WORLD_SIZE - drone.radius;
+  } else if (x + drone.radius > worldSize) {
+    x = worldSize - drone.radius;
     vx = -Math.abs(vx);
   }
 
   if (y - drone.radius < 0) {
     y = drone.radius;
     vy = Math.abs(vy);
-  } else if (y + drone.radius > WORLD_SIZE) {
-    y = WORLD_SIZE - drone.radius;
+  } else if (y + drone.radius > worldSize) {
+    y = worldSize - drone.radius;
     vy = -Math.abs(vy);
   }
 
-  return {
-    ...drone,
-    x,
-    y,
-    vx,
-    vy,
-  };
+  return { ...drone, x, y, vx, vy };
 };
 
-const queryRangeForDrone = (drone: ParticleSnapshot) => {
+const queryRangeForDrone = (drone: ParticleSnapshot, worldSize: number) => {
   const safetyRadius = 26 + (drone.id % 6) * 2;
-  const x = clamp(drone.x - safetyRadius, 0, WORLD_SIZE);
-  const y = clamp(drone.y - safetyRadius, 0, WORLD_SIZE);
-  const w = clamp(safetyRadius * 2, 1, WORLD_SIZE - x);
-  const h = clamp(safetyRadius * 2, 1, WORLD_SIZE - y);
+  const x = clamp(drone.x - safetyRadius, 0, worldSize);
+  const y = clamp(drone.y - safetyRadius, 0, worldSize);
+  const w = clamp(safetyRadius * 2, 1, worldSize - x);
+  const h = clamp(safetyRadius * 2, 1, worldSize - y);
 
   return { x, y, w, h };
 };
@@ -258,9 +252,9 @@ const addModelOrFallback = async (
   }
 };
 
-const mapWorldToScene = (x: number, y: number) => ({
-  x: x - WORLD_SIZE / 2,
-  z: y - WORLD_SIZE / 2,
+const mapWorldToScene = (x: number, y: number, worldSize: number) => ({
+  x: x - worldSize / 2,
+  z: y - worldSize / 2,
 });
 
 const formatTime = (date: Date) =>
@@ -537,12 +531,12 @@ const createProceduralTree = () => {
   return tree;
 };
 
-const createDemoFleet = (count: number): ParticleSnapshot[] =>
+const createDemoFleet = (count: number, worldSize: number): ParticleSnapshot[] =>
   Array.from({ length: count }, (_, index) => {
     const angle = (index / count) * Math.PI * 2;
     const ringRadius = 110 + (index % 4) * 18;
-    const worldX = WORLD_SIZE / 2 + Math.cos(angle) * ringRadius;
-    const worldY = WORLD_SIZE / 2 + Math.sin(angle) * ringRadius;
+    const worldX = worldSize / 2 + Math.cos(angle) * ringRadius;
+    const worldY = worldSize / 2 + Math.sin(angle) * ringRadius;
 
     return {
       id: index,
@@ -554,14 +548,15 @@ const createDemoFleet = (count: number): ParticleSnapshot[] =>
     };
   });
 
-const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }) => {
+const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }, worldSize: number) => {
   const { x, y, w, h } = boundary;
+  const halfWorld = worldSize / 2;
   const corners = [
-    new THREE.Vector3(x - WORLD_SIZE / 2, 1.5, y - WORLD_SIZE / 2),
-    new THREE.Vector3(x + w - WORLD_SIZE / 2, 1.5, y - WORLD_SIZE / 2),
-    new THREE.Vector3(x + w - WORLD_SIZE / 2, 1.5, y + h - WORLD_SIZE / 2),
-    new THREE.Vector3(x - WORLD_SIZE / 2, 1.5, y + h - WORLD_SIZE / 2),
-    new THREE.Vector3(x - WORLD_SIZE / 2, 1.5, y - WORLD_SIZE / 2),
+    new THREE.Vector3(x - halfWorld, 1.5, y - halfWorld),
+    new THREE.Vector3(x + w - halfWorld, 1.5, y - halfWorld),
+    new THREE.Vector3(x + w - halfWorld, 1.5, y + h - halfWorld),
+    new THREE.Vector3(x - halfWorld, 1.5, y + h - halfWorld),
+    new THREE.Vector3(x - halfWorld, 1.5, y - halfWorld),
   ];
 
   const geometry = new THREE.BufferGeometry().setFromPoints(corners);
@@ -570,6 +565,7 @@ const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: numbe
     transparent: true,
     opacity: 0.14,
   });
+  
   return new THREE.Line(geometry, material);
 };
 
@@ -579,6 +575,7 @@ const countNodes = (root: TreeSnapshot | null): number => {
 };
 
 const ProSimulation: React.FC = () => {
+  const [worldSize, setWorldSize] = useState<number>(720);
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -588,7 +585,7 @@ const ProSimulation: React.FC = () => {
   const mountedRef = useRef(false);
   const dronesRef = useRef<Map<number, THREE.Object3D>>(new Map());
   const droneVisualsRef = useRef<Record<number, DroneVisual>>({});
-  const swarmRef = useRef<ParticleSnapshot[]>(createDemoFleet(12));
+  const swarmRef = useRef<ParticleSnapshot[]>(createDemoFleet(12, worldSize));
   const sceneStartRef = useRef<Record<number, THREE.Vector3>>({});
   const sceneTargetRef = useRef<Record<number, THREE.Vector3>>({});
   const droneBaseScaleRef = useRef<Record<number, number>>({});
@@ -648,23 +645,21 @@ const ProSimulation: React.FC = () => {
   }, [visibleDroneCount]);
 
   const syncBoundaryOverlay = (boundaries: Array<{ x: number; y: number; w: number; h: number }>) => {
-    const group = quadtreeGroupRef.current;
-    if (!group) return;
+  const group = quadtreeGroupRef.current;
+  if (!group) return;
 
-    for (const child of group.children.slice()) {
-      const mesh = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
-      disposeObject(mesh);
-      group.remove(child);
-    }
+  for (const child of group.children.slice()) {
+    disposeObject(child);
+    group.remove(child);
+  }
 
-    if (!showQuadtreeRef.current) {
-      return;
-    }
+  if (!showQuadtreeRef.current) return;
 
-    for (const boundary of boundaries) {
-      group.add(buildBoundaryLine(boundary));
-    }
-  };
+  // 🔥 PASA worldSize AL buildBoundaryLine
+  for (const boundary of boundaries) {
+    group.add(buildBoundaryLine(boundary, worldSize));
+  }
+};
 
   const ensureDroneMeshes = (particles: ParticleSnapshot[]) => {
     const scene = sceneRef.current;
@@ -689,7 +684,7 @@ const ProSimulation: React.FC = () => {
       scene.add(visual.group);
       existing.set(particle.id, visual.group);
       droneVisualsRef.current[particle.id] = visual;
-      const scenePoint = mapWorldToScene(particle.x, particle.y);
+      const scenePoint = mapWorldToScene(particle.x, particle.y, worldSize);
       const height = Math.max(26, particle.radius * 3 + 16);
       visual.group.position.set(scenePoint.x, height, scenePoint.z);
       droneAnchorsRef.current[particle.id] = { x: scenePoint.x, y: height, z: scenePoint.z };
@@ -714,7 +709,7 @@ const ProSimulation: React.FC = () => {
       const mesh = dronesRef.current.get(particle.id);
       if (!mesh) continue;
 
-      const scenePoint = mapWorldToScene(particle.x, particle.y);
+      const scenePoint = mapWorldToScene(particle.x, particle.y, worldSize);
       const targetHeight = Math.max(26, particle.radius * 3 + 16);
       const target = new THREE.Vector3(scenePoint.x, targetHeight, scenePoint.z);
       const start = mesh.position.clone();
@@ -772,7 +767,7 @@ const ProSimulation: React.FC = () => {
       const visual = droneVisualsRef.current[particle.id];
       if (!visual) continue;
 
-      const scenePoint = mapWorldToScene(particle.x, particle.y);
+      const scenePoint = mapWorldToScene(particle.x, particle.y, worldSize);
       const height = Math.max(26, particle.radius * 3 + 16);
       visual.group.position.set(scenePoint.x, height, scenePoint.z);
       visual.group.rotation.y = Math.atan2(particle.vx, particle.vy);
@@ -799,7 +794,7 @@ const ProSimulation: React.FC = () => {
 
   const resetFleet = async () => {
     stopSimulation();
-    const freshFleet = createDemoFleet(visibleDroneCount);
+    const freshFleet = createDemoFleet(visibleDroneCount, worldSize);
     swarmRef.current = freshFleet;
     setDrones(freshFleet);
     setError(null);
@@ -841,7 +836,7 @@ const ProSimulation: React.FC = () => {
     if (runningRef.current) return;
 
     if (swarmRef.current.length === 0) {
-      swarmRef.current = createDemoFleet(visibleDroneCount);
+      swarmRef.current = createDemoFleet(visibleDroneCount, worldSize);
       setDrones(swarmRef.current);
       syncSwarmVisuals(swarmRef.current);
     }
@@ -870,14 +865,14 @@ const ProSimulation: React.FC = () => {
       stepInProgressRef.current = true;
 
       try {
-        const movedFleet = swarmRef.current.map((drone) => moveDrone(drone, deltaSeconds));
+        const movedFleet = swarmRef.current.map((drone) => moveDrone(drone, deltaSeconds, worldSize));
         const rebuildStart = performance.now();
         await rebuildSimulationTree(movedFleet);
         const rebuildMs = performance.now() - rebuildStart;
 
         const [treeSnapshot, queryResults] = await Promise.all([
           getTree() as Promise<TreeNodeSnapshot>,
-          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone)) as Promise<QueryResult>)),
+          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone, worldSize)) as Promise<QueryResult>)),
         ]);
 
         let totalComparisons = 0;
@@ -1037,7 +1032,7 @@ const ProSimulation: React.FC = () => {
     const clouds = new THREE.Group();
     scene.add(clouds);
 
-    const demoParticles = createDemoFleet(12);
+    const demoParticles = createDemoFleet(12, worldSize);
     ensureDroneMeshes(demoParticles);
     setStats((previous) => ({
       ...previous,
@@ -1158,7 +1153,7 @@ const ProSimulation: React.FC = () => {
     };
   }, [isLive]);
 
-  return (
+return (
     <div className="pro-simulation-page">
       <aside className="pro-simulation-sidebar">
         <div className="simulation-card hero-card">
@@ -1172,6 +1167,7 @@ const ProSimulation: React.FC = () => {
 
         <div className="simulation-card controls-card">
           <div className="section-title">Vista</div>
+          
           <label className="count-field">
             <span>Número de drones</span>
             <input
@@ -1181,14 +1177,88 @@ const ProSimulation: React.FC = () => {
               onChange={(event) => setVisibleDroneCount(Math.max(0, Math.round(Number(event.target.value || 0))))}
             />
           </label>
-          <div className="pro-control-row">
-            <button className={isLive ? "primary-action" : "secondary-action"} onClick={() => setIsLive((value) => !value)}>
-              {isLive ? "Detener" : "Iniciar"}
-            </button>
-            <button className="tertiary-action" onClick={resetCamera}>
-              Reset cámara
-            </button>
-          </div>
+
+          {/* 🔥 INPUT PARA TAMAÑO DEL MUNDO */}
+          <label className="count-field" style={{ marginTop: "8px" }}>
+            <span>Tamaño del mundo (N x N)</span>
+            <input
+              type="number"
+              min={1}
+              value={worldSize}
+              onChange={(event) => setWorldSize(Math.max(1, Number(event.target.value || 1)))}
+            />
+          </label>
+
+          {/* 🔥 BOTONES EN FILA CON FLEX */}
+<div style={{ 
+  display: "flex", 
+  gap: "10px", 
+  flexWrap: "wrap", 
+  width: "100%", 
+  marginTop: "8px",
+  justifyContent: "flex-start",
+  alignItems: "center"
+}}>
+  <button 
+    className={isLive ? "primary-action" : "secondary-action"} 
+    onClick={() => setIsLive((value) => !value)}
+    style={{ 
+      display: "inline-block",
+      visibility: "visible",
+      opacity: 1,
+      minWidth: "100px",
+      padding: "8px 16px"
+    }}
+  >
+    {isLive ? "Detener" : "Iniciar"}
+  </button>
+  
+  <button 
+    className="tertiary-action" 
+    onClick={resetCamera}
+    style={{ 
+      display: "inline-block",
+      visibility: "visible",
+      opacity: 1,
+      minWidth: "100px",
+      padding: "8px 16px"
+    }}
+  >
+    Reset cámara
+  </button>
+  
+  <button
+    className="secondary-action"  // ← AGREGAR ESTO 
+    onClick={async () => {
+      try {
+        await setTreeBoundary(worldSize);
+        await fetchSnapshotRef.current();
+        if (tree) {
+          const flat = flattenTree(tree);
+          syncBoundaryOverlay(flat.boundaries);
+        }
+      } catch (err) {
+        console.error("Error al cambiar tamaño:", err);
+      }
+    }}
+    style={{ 
+      display: "inline-block",
+      visibility: "visible",
+      opacity: 1,
+      padding: "8px 16px",
+      background: "#2d8ac7",
+      color: "white",
+      border: "none",
+      borderRadius: "6px",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: 600,
+      minWidth: "120px"
+    }}
+  >
+    🔄 Aplicar tamaño
+  </button>
+</div>
         </div>
 
         <div className="simulation-card options-card">
@@ -1210,6 +1280,10 @@ const ProSimulation: React.FC = () => {
             <div className="stat-box"><span>Nodos</span><strong>{stats.quadtreeNodes}</strong></div>
             <div className="stat-box"><span>Última sync</span><strong>{stats.lastSyncLabel}</strong></div>
             <div className="stat-box"><span>Modo</span><strong>{isLive ? "Live" : "Pausa"}</strong></div>
+          </div>
+          {/* 🔥 MOSTRAR TAMAÑO ACTUAL */}
+          <div className="stats-grid" style={{ marginTop: "8px" }}>
+            <div className="stat-box"><span>Tamaño mundo</span><strong>{worldSize}x{worldSize}</strong></div>
           </div>
         </div>
 
@@ -1233,5 +1307,4 @@ const ProSimulation: React.FC = () => {
     </div>
   );
 };
-
 export default ProSimulation;
