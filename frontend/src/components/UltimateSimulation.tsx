@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { getTree, queryTree } from "../services/api";
 import { rebuildSimulationTree, SimulationParticle } from "../services/simulationApi";
 import "../styles/ProSimulation.css";
@@ -37,7 +38,6 @@ interface SimulationStats {
 
 type DroneVisual = {
   group: THREE.Group;
-  propellers: THREE.Object3D[];
 };
 
 const WORLD_SIZE = 720;
@@ -143,6 +143,52 @@ const disposeObject = (object: THREE.Object3D) => {
   });
 };
 
+const configureDroneModel = (object: THREE.Object3D) => {
+  object.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    const material = mesh.material as unknown as THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[] | undefined;
+    if (Array.isArray(material)) {
+      for (const entry of material) {
+        (entry as any).roughness = 0.3;
+        (entry as any).metalness = 0.7;
+        (entry as any).needsUpdate = true;
+      }
+    } else if (material) {
+      (material as any).roughness = 0.3;
+      (material as any).metalness = 0.7;
+      (material as any).needsUpdate = true;
+    }
+  });
+};
+
+const fitDroneModel = (object: THREE.Object3D) => {
+  const box = new (THREE as any).Box3().setFromObject(object);
+  if (box.isEmpty()) {
+    return { size: 1 };
+  }
+
+  const center = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(size);
+
+  object.position.x -= center.x;
+  object.position.y -= center.y;
+  object.position.z -= center.z;
+  configureDroneModel(object);
+
+  return { size: Math.max(size.x, size.y, size.z) || 1 };
+};
+
+const cloneDroneModel = (model: THREE.Group) => {
+  const clone = (model as any).clone(true) as THREE.Group;
+  configureDroneModel(clone);
+  return clone;
+};
+
 const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }) => {
   const { x, y, w, h } = boundary;
   const corners = [
@@ -162,152 +208,6 @@ const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: numbe
   return new THREE.Line(geometry, material);
 };
 
-const createMavicDroneMesh = (drone: Drone): DroneVisual => {
-  const group = new THREE.Group();
-  const propellers: THREE.Object3D[] = [];
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color: 0x1f2630,
-    roughness: 0.16,
-    metalness: 0.76,
-    emissive: new THREE.Color(drone.color).multiplyScalar(0.06),
-    emissiveIntensity: 0.55,
-  });
-
-  const shell = new THREE.Mesh(new THREE.BoxGeometry(1.82, 0.34, 1.08), bodyMaterial);
-  shell.scale.set(1.08, 1, 0.98);
-  shell.castShadow = true;
-  shell.receiveShadow = true;
-  group.add(shell);
-
-  const topCap = new THREE.Mesh(
-    new THREE.SphereGeometry(0.56, 16, 12),
-    new THREE.MeshStandardMaterial({
-      color: 0xcfd6df,
-      roughness: 0.12,
-      metalness: 0.84,
-      emissive: new THREE.Color(0x9ddcff).multiplyScalar(0.05),
-    })
-  );
-  topCap.position.set(0, 0.27, 0);
-  topCap.scale.set(1.16, 0.48, 1.08);
-  group.add(topCap);
-
-  const spine = new THREE.Mesh(
-    new THREE.BoxGeometry(1.16, 0.12, 0.82),
-    new THREE.MeshStandardMaterial({ color: 0x0f1318, roughness: 0.32, metalness: 0.42 })
-  );
-  spine.position.set(0, 0.04, 0);
-  group.add(spine);
-
-  const underPod = new THREE.Mesh(
-    new THREE.SphereGeometry(0.24, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0x0d1116, roughness: 0.56, metalness: 0.26 })
-  );
-  underPod.position.set(0, -0.34, 0.02);
-  underPod.scale.set(1.1, 0.5, 0.95);
-  group.add(underPod);
-
-  const cameraPod = new THREE.Mesh(
-    new THREE.SphereGeometry(0.17, 10, 8),
-    new THREE.MeshStandardMaterial({ color: 0x0f1720, roughness: 0.42, metalness: 0.18 })
-  );
-  cameraPod.position.set(0, -0.46, 0.3);
-  cameraPod.scale.set(1.14, 0.82, 0.98);
-  group.add(cameraPod);
-
-  const lens = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), new THREE.MeshBasicMaterial({ color: 0x69d2ff }));
-  lens.position.set(0, -0.46, 0.48);
-  group.add(lens);
-
-  const armMaterial = new THREE.MeshStandardMaterial({
-    color: 0xb8c3cc,
-    roughness: 0.22,
-    metalness: 0.8,
-  });
-
-  const motorMaterial = new THREE.MeshStandardMaterial({
-    color: 0x2a313b,
-    roughness: 0.48,
-    metalness: 0.5,
-  });
-
-  const propMaterial = new THREE.MeshBasicMaterial({
-    color: 0xbfe7ff,
-    transparent: true,
-    opacity: 0.28,
-  });
-
-  const armSpecs = [
-    { x: 1.1, z: 0, rot: Math.PI / 2 },
-    { x: -1.1, z: 0, rot: Math.PI / 2 },
-    { x: 0, z: 1.1, rot: 0 },
-    { x: 0, z: -1.1, rot: 0 },
-  ];
-
-  armSpecs.forEach((spec, index) => {
-    const arm = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.06, 0.12), armMaterial);
-    arm.position.set(spec.x / 2, -0.02, spec.z / 2);
-    arm.rotation.y = spec.rot;
-    group.add(arm);
-
-    const motor = new THREE.Mesh(new THREE.SphereGeometry(0.19, 12, 8), motorMaterial);
-    motor.position.set(spec.x, 0.07, spec.z);
-    group.add(motor);
-
-    const rotorHub = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.03, 0.16),
-      new THREE.MeshStandardMaterial({ color: 0x1a1f25, roughness: 0.6, metalness: 0.2 })
-    );
-    rotorHub.position.set(spec.x, 0.2, spec.z);
-    group.add(rotorHub);
-
-    const bladeA = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.02, 0.09), propMaterial);
-    bladeA.position.set(spec.x, 0.245, spec.z);
-    bladeA.rotation.y = index % 2 === 0 ? 0.12 : -0.12;
-    group.add(bladeA);
-    propellers.push(bladeA);
-
-    const bladeB = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.02, 0.09), propMaterial);
-    bladeB.position.set(spec.x, 0.245, spec.z);
-    bladeB.rotation.y = Math.PI / 2 + (index % 2 === 0 ? 0.12 : -0.12);
-    group.add(bladeB);
-    propellers.push(bladeB);
-
-    const light = new THREE.Mesh(
-      new THREE.SphereGeometry(0.07, 8, 6),
-      new THREE.MeshBasicMaterial({ color: index % 2 === 0 ? 0x7dd3fc : 0xfda4af })
-    );
-    light.position.set(spec.x, 0.02, spec.z);
-    group.add(light);
-  });
-
-  const rearSkidLeft = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, 0.06, 0.82),
-    new THREE.MeshStandardMaterial({ color: 0x4f6170, roughness: 0.36, metalness: 0.32 })
-  );
-  rearSkidLeft.position.set(-0.46, -0.4, -0.1);
-  group.add(rearSkidLeft);
-
-  const rearSkidRight = new THREE.Mesh(
-    new THREE.BoxGeometry(0.12, 0.06, 0.82),
-    new THREE.MeshStandardMaterial({ color: 0x4f6170, roughness: 0.36, metalness: 0.32 })
-  );
-  rearSkidRight.position.set(0.46, -0.4, -0.1);
-  group.add(rearSkidRight);
-
-  const frontLight = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: 0xf8fafc }));
-  frontLight.position.set(0, 0.01, 0.62);
-  group.add(frontLight);
-
-  const scale = clamp(drone.radius * 1.8, 7.4, 14.8);
-  group.scale.setScalar(scale);
-
-  return {
-    group,
-    propellers,
-  };
-};
-
 const UltimateSimulation: React.FC = () => {
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -323,6 +223,7 @@ const UltimateSimulation: React.FC = () => {
   const lastSimulationFrameTimesRef = useRef<number[]>([]);
   const dronesRef = useRef<Drone[]>(createFleet(12));
   const droneVisualsRef = useRef<Record<number, DroneVisual>>({});
+  const droneModelRef = useRef<THREE.Group | null>(null);
   const quadtreeGroupRef = useRef<THREE.Group | null>(null);
   const lastSyncRef = useRef<Date | null>(null);
 
@@ -330,6 +231,7 @@ const UltimateSimulation: React.FC = () => {
   const [drones, setDrones] = useState<Drone[]>(() => dronesRef.current);
   const [running, setRunning] = useState(false);
   const [tree, setTree] = useState<TreeNodeSnapshot | null>(null);
+  const [droneModel, setDroneModel] = useState<THREE.Group | null>(null);
   const [showQuadtree, setShowQuadtree] = useState(true);
   const [stats, setStats] = useState<SimulationStats>({
     frame: 0,
@@ -345,6 +247,87 @@ const UltimateSimulation: React.FC = () => {
   const showQuadtreeRef = useRef(showQuadtree);
 
   showQuadtreeRef.current = showQuadtree;
+
+  useEffect(() => {
+    const loader = new GLTFLoader() as any;
+    let cancelled = false;
+
+    console.log("Intentando cargar modelo Spark desde /models/spark.glb...");
+
+    loader.load(
+      "/models/spark.glb",
+      (gltf: any) => {
+        if (cancelled) {
+          return;
+        }
+
+        console.log("Modelo cargado exitosamente!", gltf);
+
+        const model = gltf.scene as THREE.Group;
+        model.visible = true;
+        model.position.set(0, 30, 0);
+        (model.rotation as any).x = 0;
+        (model.rotation as any).y = 0;
+        (model.rotation as any).z = 0;
+        model.scale.set(34, 34, 34);
+
+        model.traverse((child) => {
+          const mesh = child as any;
+          if (mesh && (mesh.type === "Mesh" || mesh.isMesh)) {
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.frustumCulled = false;
+            mesh.name = mesh.name || "spark-part";
+
+            const material = mesh.material;
+            if (Array.isArray(material)) {
+              material.forEach((entry: any) => {
+                if (entry) {
+                  entry.roughness = 0.3;
+                  entry.metalness = 0.7;
+                  entry.needsUpdate = true;
+                }
+              });
+            } else if (material) {
+              (material as any).roughness = 0.3;
+              (material as any).metalness = 0.7;
+              (material as any).needsUpdate = true;
+            }
+          }
+        });
+
+        const scene = sceneRef.current;
+        if (scene) {
+          scene.add(model);
+          console.log("Modelo agregado a la escena para prueba en (0, 30, 0)");
+        }
+
+        const fit = fitDroneModel(model);
+        (model as any).userData.baseSize = fit.size;
+        console.log("Posición del modelo:", model.position);
+        console.log("Escala del modelo:", model.scale);
+        console.log("Base size del modelo:", fit.size);
+        droneModelRef.current = model;
+        setDroneModel(model);
+      },
+      (event: any) => {
+        if (event?.loaded !== undefined && event?.total) {
+          const percent = ((event.loaded / event.total) * 100).toFixed(1);
+          console.log(`Cargando: ${percent}%`);
+        }
+      },
+      (error: any) => {
+        if (!cancelled) {
+          console.error("Error cargando modelo", error);
+          setError(error instanceof Error ? error.message : "No se pudo cargar /models/spark.glb");
+        }
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const syncQuadtreeOverlay = (snapshot: TreeNodeSnapshot | null) => {
     const group = quadtreeGroupRef.current;
@@ -370,7 +353,8 @@ const UltimateSimulation: React.FC = () => {
 
   const syncDroneVisuals = (fleet: Drone[]) => {
     const scene = sceneRef.current;
-    if (!scene) return;
+    const model = droneModelRef.current;
+    if (!scene || !model) return;
 
     const incomingIds = new Set(fleet.map((drone) => drone.id));
     for (const [id, visual] of Object.entries(droneVisualsRef.current).map(([key, value]) => [Number(key), value] as const)) {
@@ -384,22 +368,21 @@ const UltimateSimulation: React.FC = () => {
     fleet.forEach((drone) => {
       let visual = droneVisualsRef.current[drone.id];
       if (!visual) {
-        visual = createMavicDroneMesh(drone);
+        const clone = cloneDroneModel(model);
+        visual = { group: clone };
         droneVisualsRef.current[drone.id] = visual;
-        scene.add(visual.group);
+        scene.add(clone);
       }
 
       const sceneX = drone.x - WORLD_SIZE / 2;
       const sceneZ = drone.y - WORLD_SIZE / 2;
-      const height = 20 + drone.radius * 1.9;
+        const scale = 34;
+        const height = 30;
       visual.group.position.set(sceneX, height, sceneZ);
       visual.group.rotation.y = Math.atan2(drone.vx, drone.vy);
       visual.group.rotation.x = Math.sin((drone.id + drone.x) / 80) * 0.04;
       visual.group.rotation.z = Math.cos((drone.id + drone.y) / 90) * 0.03;
-      visual.group.scale.setScalar(clamp(drone.radius * 1.8, 7.4, 14.8));
-      visual.propellers.forEach((propeller) => {
-        propeller.visible = true;
-      });
+      visual.group.scale.setScalar(scale);
     });
   };
 
@@ -741,15 +724,19 @@ const UltimateSimulation: React.FC = () => {
 
           const sceneX = drone.x - WORLD_SIZE / 2;
           const sceneZ = drone.y - WORLD_SIZE / 2;
-          const altitude = 22 + drone.radius * 1.7 + Math.sin((now / 1000) * 1.5 + drone.id) * 0.8;
+          const scale = 34;
+          const altitude = 30 + Math.sin((now / 1000) * 1.5 + drone.id) * 0.8;
           visual.group.position.set(sceneX, altitude, sceneZ);
           visual.group.rotation.y = Math.atan2(drone.vx, drone.vy);
           visual.group.rotation.x = Math.sin((now / 1000) * 3 + drone.id) * 0.03;
           visual.group.rotation.z = Math.cos((now / 1000) * 2.5 + drone.id) * 0.02;
 
           const propSpin = (10 + Math.hypot(drone.vx, drone.vy) * 0.12) * (delta / 1000);
-          visual.propellers.forEach((propeller, index) => {
-            propeller.rotation.y += index % 2 === 0 ? propSpin : -propSpin;
+          visual.group.traverse((child) => {
+            const name = String((child as any).name ?? "").toLowerCase();
+            if (name.startsWith("prop") || name.startsWith("blade") || name.startsWith("rotor")) {
+              child.rotation.z += propSpin;
+            }
           });
         });
 
@@ -793,6 +780,14 @@ const UltimateSimulation: React.FC = () => {
     setDrones(freshFleet);
     syncDroneVisuals(freshFleet);
   }, [droneCount]);
+
+  useEffect(() => {
+    if (!droneModel) {
+      return;
+    }
+
+    syncDroneVisuals(dronesRef.current);
+  }, [droneModel]);
 
   useEffect(() => {
     showQuadtreeRef.current = showQuadtree;
