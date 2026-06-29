@@ -102,25 +102,25 @@ export async function clearTree() {
   }
 }
 
-export async function setTreeBoundary(boundary: { x: number; y: number; w: number; h: number }) {
+export async function setTreeBoundary(size: number) {
   try {
     const res = await fetch("http://localhost:8080/set-boundary", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
-      body: JSON.stringify(boundary),
+      body: JSON.stringify({ size }), // ← Solo envía { size: 1000 }
     });
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Error HTTP ${res.status}: ${errorText || "Sin respuesta del servidor"}`);
+      throw new Error(`Error HTTP ${res.status}: ${errorText || "Sin respuesta"}`);
     }
 
     return await res.json();
   } catch (err) {
     const message = err instanceof Error ? err.message : "Error desconocido";
     console.error("Error en setTreeBoundary:", message);
-    throw new Error(`No se pudo cambiar el boundary del árbol: ${message}`);
+    throw new Error(`No se pudo cambiar el boundary: ${message}`);
   }
 }
 

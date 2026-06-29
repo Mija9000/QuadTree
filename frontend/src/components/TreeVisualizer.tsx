@@ -37,6 +37,7 @@ interface QueryResult {
   comparisons: number;
   count: number;
   particles: Particle[];
+  queryTimeMs?: number;
 }
 
 interface NodePosition {
@@ -56,6 +57,16 @@ const TreeVisualizer: React.FC = () => {
   const [queryRange, setQueryRange] = useState<QueryRange>({ x: 100, y: 100, w: 120, h: 120 });
   const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
   const [customBoundary, setCustomBoundary] = useState({ x: 0, y: 0, w: 720, h: 720 });
+  const [quadrantSize, setQuadrantSize] = useState<number>(1000);
+  const [insertStats, setInsertStats] = useState<{
+  count: number;
+  timeMs: number;
+  comparisons?: number;
+} | null>(null);
+const [bruteForceResult, setBruteForceResult] = useState<{
+  count: number;
+  timeMs: number;
+} | null>(null);
 
   const WORLD_SIZE = 400;
   const canvasSize = { width: 560, height: 560 } as const;
@@ -271,6 +282,62 @@ const TreeVisualizer: React.FC = () => {
     }
   }, [tree, queryResult]);
 
+  // para simular fuerza bruta para la comparación
+  const handleBruteForceQuery = async () => {
+  if (!tree) {
+    setError("Primero debes cargar el árbol");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError(null);
+
+    // Obtener TODAS las partículas del árbol
+    const allParticles: Particle[] = [];
+    const collectParticles = (node: Node) => {
+      if (node.particles) {
+        allParticles.push(...node.particles);
+      }
+      if (node.children) {
+        for (const child of node.children) {
+          collectParticles(child);
+        }
+      }
+    };
+    collectParticles(tree);
+
+    const { x, y, w, h } = queryRange;
+
+    // 🔥 MEDIR TIEMPO DE FUERZA BRUTA
+    const startTime = performance.now();
+    
+    // 🔥 BÚSQUEDA INGENUA: Revisar TODAS las partículas una por una
+    const found = allParticles.filter(p => 
+      p.x >= x && p.x <= x + w &&
+      p.y >= y && p.y <= y + h
+    );
+    
+    const endTime = performance.now();
+    const elapsedMs = endTime - startTime;
+
+    setBruteForceResult({
+      count: found.length,
+      timeMs: elapsedMs,
+    });
+
+    console.log(`🧪 Fuerza bruta: ${found.length} partículas en ${elapsedMs.toFixed(2)} ms`);
+    console.log(`📊 Total revisadas: ${allParticles.length} partículas`);
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en fuerza bruta:", err);
+    setError(`Error en fuerza bruta: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
   const handleInsert = async () => {
     if (!tree) {
       console.error("No hay árbol cargado");
@@ -300,35 +367,52 @@ const TreeVisualizer: React.FC = () => {
   };
 
   const handleBulkInsert = async (count: number) => {
-    if (!tree) {
-      console.error("No hay árbol cargado");
-      setError("Primero debes cargar el árbol");
-      return;
+  if (!tree) {
+    console.error("No hay árbol cargado");
+    setError("Primero debes cargar el árbol");
+    return;
+  }
+
+  const { x, y, w, h } = tree.boundary;
+  
+  // 🔥 MEDIR TIEMPO DE INSERCIÓN
+  const startTime = performance.now();
+  
+  try {
+    setLoading(true);
+    setError(null);
+
+    for (let i = 0; i < count; i++) {
+      const p = {
+        x: x + Math.random() * w,
+        y: y + Math.random() * h,
+      };
+      await insertParticle(p);
     }
 
-    const { x, y, w, h } = tree.boundary;
-    try {
-      setLoading(true);
-      setError(null);
-
-      for (let i = 0; i < count; i++) {
-        const p = {
-          x: x + Math.random() * w,
-          y: y + Math.random() * h,
-        };
-        await insertParticle(p);
-      }
-
-      await refreshTree();
-      setQueryResult(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Error desconocido";
-      console.error("Error en inserción masiva:", err);
-      setError(`Error al insertar ${count}: ${message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+    await refreshTree();
+    setQueryResult(null);
+    
+    // 🔥 CALCULAR TIEMPO
+    const endTime = performance.now();
+    const elapsedMs = endTime - startTime;
+    
+    // 🔥 GUARDAR ESTADÍSTICAS
+    setInsertStats({
+      count: count,
+      timeMs: elapsedMs,
+    });
+    
+    console.log(`✅ Insertadas ${count} partículas en ${elapsedMs.toFixed(2)} ms`);
+    
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error en inserción masiva:", err);
+    setError(`Error al insertar ${count}: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleClear = async () => {
     try {
@@ -347,36 +431,60 @@ const TreeVisualizer: React.FC = () => {
   };
 
   const handleApplyBoundary = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      await setTreeBoundary(customBoundary);
-      await refreshTree();
-      setQueryResult(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Error desconocido";
-      console.error("Error al aplicar boundary:", err);
-      setError(`Error al aplicar boundary: ${message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  try {
+    setLoading(true);
+    setError(null);
+    
+    // 🔥 ENVÍA SOLO EL TAMAÑO
+    await setTreeBoundary(quadrantSize);
+    await refreshTree();
+    setQueryResult(null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error al aplicar boundary:", err);
+    setError(`Error al aplicar boundary: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleQuery = async (range: QueryRange) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await queryTree(range);
-      setQueryRange(range);
-      setQueryResult(response as QueryResult);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Error desconocido";
-      console.error("Error al consultar:", err);
-      setError(`Error al consultar: ${message}`);
-    } finally {
-      setLoading(false);
+  try {
+    setLoading(true);
+    setError(null);
+    
+    // 🔥 MEDIR TIEMPO DE CONSULTA
+    const startTime = performance.now();
+    const response = await queryTree(range);
+    const endTime = performance.now();
+    const elapsedMs = endTime - startTime;
+    
+    setQueryRange(range);
+    setQueryResult({
+      ...response,
+      queryTimeMs: elapsedMs, // ← Guardar el tiempo en el resultado
+    } as QueryResult);
+    
+    // 🔥 ACTUALIZAR ESTADÍSTICAS CON COMPARACIONES
+    if (insertStats) {
+      setInsertStats({
+        ...insertStats,
+        comparisons: response.comparisons,
+      });
     }
-  };
+    
+    console.log(`✅ Consulta completada en ${elapsedMs.toFixed(2)} ms`);
+    console.log(`📊 Encontradas: ${response.count} partículas`);
+    console.log(`🔍 Comparaciones: ${response.comparisons}`);
+    
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    console.error("Error al consultar:", err);
+    setError(`Error al consultar: ${message}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Contar nodos totales
   const countNodes = (node: Node | null): number => {
@@ -545,56 +653,48 @@ const TreeVisualizer: React.FC = () => {
           </div>
 
           <div className="control-section action-section action-section-left">
-            <div className="section-title">Acciones</div>
-            <div className="controls" style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px", width: "100%" }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600 }}>
-                X
-                <input
-                  type="number"
-                  value={customBoundary.x}
-                  onChange={(event) => setCustomBoundary((previous) => ({ ...previous, x: Number(event.target.value) }))}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600 }}>
-                Y
-                <input
-                  type="number"
-                  value={customBoundary.y}
-                  onChange={(event) => setCustomBoundary((previous) => ({ ...previous, y: Number(event.target.value) }))}
-                />
-              </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600 }}>
-                W
+            <div className="section-title">Redimensionar mundo</div>
+            
+            <div className="controls" style={{ display: "flex", gap: "8px", alignItems: "end", width: "100%", marginBottom: "8px" }}>
+              <button onClick={() => handleBulkInsert(100)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 100
+              </button>
+              <button onClick={() => handleBulkInsert(1000)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 1000
+              </button>
+              <button onClick={() => handleBulkInsert(10000)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 10000
+              </button>
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600, flex: 1 }}>
+                Tamaño (N x N)
                 <input
                   type="number"
                   min={1}
-                  value={customBoundary.w}
-                  onChange={(event) => setCustomBoundary((previous) => ({ ...previous, w: Math.max(1, Number(event.target.value)) }))}
+                  value={quadrantSize}
+                  onChange={(event) => setQuadrantSize(Math.max(1, Number(event.target.value || 1)))}
+                  style={{ padding: "6px 10px", border: "1px solid #ced4da", borderRadius: "4px", fontSize: "14px", width: "100%", maxWidth: "290px" }}
                 />
               </label>
-              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600 }}>
-                H
-                <input
-                  type="number"
-                  min={1}
-                  value={customBoundary.h}
-                  onChange={(event) => setCustomBoundary((previous) => ({ ...previous, h: Math.max(1, Number(event.target.value)) }))}
-                />
-              </label>
+              <button onClick={handleApplyBoundary} className="insert-button secondary-button" disabled={loading} style={{ marginBottom: "2px" }}>
+                🔄 Redimensionar
+              </button>
             </div>
-            <div className="controls action-controls">
-  <button onClick={handleApplyBoundary} className="insert-button secondary-button" disabled={loading}>
-    Aplicar cuadrante
-  </button>
-  <button onClick={handleInsert} className="insert-button" disabled={loading}>
-    {loading ? "⏳ Insertando..." : "➕ Insertar Partícula"}
-  </button>
-  <button onClick={handleClear} className="insert-button danger-button" disabled={loading}>
-    Limpiar
-  </button>
-</div>
+            
             <div style={{ marginTop: 8, fontSize: 12, color: "#4f5d75" }}>
-              Área: {customBoundary.w * customBoundary.h} | X: {customBoundary.x} - {customBoundary.x + customBoundary.w} | Y: {customBoundary.y} - {customBoundary.y + customBoundary.h}
+              📐 Tamaño: {quadrantSize}x{quadrantSize} | Área: {quadrantSize * quadrantSize} | Rango: 0 - {quadrantSize}
+            </div>
+
+            <div className="section-title" style={{ marginTop: "12px" }}>Acciones</div>
+            <div className="controls action-controls">
+              <button onClick={handleInsert} className="insert-button" disabled={loading}>
+                {loading ? "⏳ Insertando..." : "➕ Insertar Partícula"}
+              </button>
+              <button onClick={handleClear} className="insert-button danger-button" disabled={loading}>
+                Limpiar
+              </button>
+              <button onClick={() => setInsertStats(null)} className="insert-button secondary-button" disabled={loading}>
+                Limpiar stats
+              </button>
             </div>
           </div>
         </div>
@@ -608,20 +708,106 @@ const TreeVisualizer: React.FC = () => {
               <div className="control-section query-section">
                 <div className="section-title">Consultas rápidas</div>
                 <div className="controls preset-controls">
-                  <button onClick={() => handleQuery({ x: 0, y: 0, w: 400, h: 400 })} className="insert-button secondary-button" disabled={loading}>
+                  {/* 🔥 TODO EL MUNDO */}
+                  <button 
+                    onClick={() => handleQuery({ 
+                      x: tree?.boundary.x || 0, 
+                      y: tree?.boundary.y || 0, 
+                      w: tree?.boundary.w || 400, 
+                      h: tree?.boundary.h || 400 
+                    })} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                  >
                     Todo
                   </button>
-                  <button onClick={() => handleQuery({ x: 0, y: 0, w: 200, h: 200 })} className="insert-button secondary-button" disabled={loading}>
+                  
+                  {/* 🔥 SUPERIOR IZQUIERDA */}
+                  <button 
+                    onClick={() => {
+                      const halfW = (tree?.boundary.w || 400) / 2;
+                      const halfH = (tree?.boundary.h || 400) / 2;
+                      handleQuery({ 
+                        x: tree?.boundary.x || 0, 
+                        y: tree?.boundary.y || 0, 
+                        w: halfW, 
+                        h: halfH 
+                      });
+                    }} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                  >
                     Superior izq.
                   </button>
-                  <button onClick={() => handleQuery({ x: 200, y: 0, w: 200, h: 200 })} className="insert-button secondary-button" disabled={loading}>
+                  
+                  {/* 🔥 SUPERIOR DERECHA */}
+                  <button 
+                    onClick={() => {
+                      const halfW = (tree?.boundary.w || 400) / 2;
+                      const halfH = (tree?.boundary.h || 400) / 2;
+                      handleQuery({ 
+                        x: (tree?.boundary.x || 0) + halfW, 
+                        y: tree?.boundary.y || 0, 
+                        w: halfW, 
+                        h: halfH 
+                      });
+                    }} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                  >
                     Superior der.
                   </button>
-                  <button onClick={() => handleQuery({ x: 0, y: 200, w: 200, h: 200 })} className="insert-button secondary-button" disabled={loading}>
+                  
+                  {/* 🔥 INFERIOR IZQUIERDA */}
+                  <button 
+                    onClick={() => {
+                      const halfW = (tree?.boundary.w || 400) / 2;
+                      const halfH = (tree?.boundary.h || 400) / 2;
+                      handleQuery({ 
+                        x: tree?.boundary.x || 0, 
+                        y: (tree?.boundary.y || 0) + halfH, 
+                        w: halfW, 
+                        h: halfH 
+                      });
+                    }} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                  >
                     Inferior izq.
                   </button>
-                  <button onClick={() => handleQuery({ x: 200, y: 200, w: 200, h: 200 })} className="insert-button secondary-button" disabled={loading}>
+                  
+                  {/* 🔥 INFERIOR DERECHA */}
+                  <button 
+                    onClick={() => {
+                      const halfW = (tree?.boundary.w || 400) / 2;
+                      const halfH = (tree?.boundary.h || 400) / 2;
+                      handleQuery({ 
+                        x: (tree?.boundary.x || 0) + halfW, 
+                        y: (tree?.boundary.y || 0) + halfH, 
+                        w: halfW, 
+                        h: halfH 
+                      });
+                    }} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                  >
                     Inferior der.
+                  </button>
+                </div>
+
+                {/* 🔥 BOTÓN DE FUERZA BRUTA */}
+                <div style={{ marginTop: "8px" }}>
+                  <button 
+                    onClick={handleBruteForceQuery} 
+                    className="insert-button secondary-button" 
+                    disabled={loading || !tree}
+                    style={{ 
+                      background: "#e67e22", 
+                      color: "white",
+                      border: "none"
+                    }}
+                  >
+                    🧪 Probar Fuerza Bruta
                   </button>
                 </div>
               </div>
@@ -669,10 +855,87 @@ const TreeVisualizer: React.FC = () => {
                   </button>
                 </div>
 
+                {/* Panel de comparación Quadtree vs Fuerza Bruta */}
+                <div className="comparison-panel" style={{ 
+                  marginTop: "16px", 
+                  padding: "12px", 
+                  background: "#f8f9fa", 
+                  borderRadius: "8px",
+                  border: "1px solid #e9ecef"
+                }}>
+                  <h4 style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#2c3e50" }}>
+                    📊 Comparación de rendimiento
+                  </h4>
+                  
+                  {insertStats ? (
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "13px" }}>
+                      <div>
+                        <span style={{ color: "#6c757d" }}>Partículas insertadas:</span>
+                        <strong style={{ marginLeft: "8px" }}>{insertStats.count}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "#6c757d" }}>Tiempo de inserción:</span>
+                        <strong style={{ marginLeft: "8px" }}>{insertStats.timeMs.toFixed(2)} ms</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "#6c757d" }}>Quadtree (comparaciones):</span>
+                        <strong style={{ marginLeft: "8px" }}>
+                          {queryResult?.comparisons !== undefined 
+                            ? queryResult.comparisons 
+                            : "~" + Math.ceil(Math.log2(insertStats.count))}
+                        </strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "#6c757d" }}>Fuerza bruta (teórico):</span>
+                        <strong style={{ marginLeft: "8px" }}>~{insertStats.count * insertStats.count}</strong>
+                      </div>
+                      <div style={{ gridColumn: "span 2" }}>
+                        <span style={{ color: "#6c757d" }}>Mejora (Quadtree vs Bruta):</span>
+                        <strong style={{ marginLeft: "8px", color: "#27ae60" }}>
+                          ~{(insertStats.count * insertStats.count / (queryResult?.comparisons || Math.ceil(Math.log2(insertStats.count)))).toFixed(0)}x más rápido
+                        </strong>
+                      </div>
+                      {/* 🔥 TIEMPOS REALES */}
+                      {(queryResult?.queryTimeMs !== undefined || bruteForceResult) && (
+                        <div style={{ gridColumn: "span 2", borderTop: "1px solid #ddd", paddingTop: "8px", marginTop: "4px" }}>
+                          <span style={{ color: "#6c757d" }}>⏱️ Tiempo Quadtree:</span>
+                          <strong style={{ marginLeft: "8px" }}>{queryResult?.queryTimeMs?.toFixed(2) ?? 'N/A'} ms</strong>
+                          <span style={{ marginLeft: "16px", color: "#6c757d" }}>⏱️ Tiempo Fuerza Bruta:</span>
+                          <strong style={{ marginLeft: "8px", color: "#e67e22" }}>{bruteForceResult?.timeMs?.toFixed(2) ?? 'N/A'} ms</strong>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "13px", color: "#6c757d" }}>
+                      💡 Inserta partículas para ver la comparación de rendimiento
+                    </div>
+                  )}
+                </div>
+
+                {/* 🔥 RESULTADO DE FUERZA BRUTA */}
+                {bruteForceResult && (
+                  <div className="query-result-box" style={{ 
+                    marginTop: "8px", 
+                    borderColor: "#e67e22",
+                    background: "#fef9e7"
+                  }}>
+                    <div style={{ fontWeight: "bold", color: "#e67e22" }}>🧪 Resultado Fuerza Bruta</div>
+                    <div>Encontradas: {bruteForceResult.count}</div>
+                    <div>⏱️ Tiempo: {bruteForceResult.timeMs.toFixed(2)} ms</div>
+                    <div style={{ fontSize: "12px", color: "#7f8c8d", marginTop: "4px" }}>
+                      (Revisó todas las partículas una por una)
+                    </div>
+                  </div>
+                )}
+
                 {queryResult && (
                   <div className="query-result-box">
                     <div>Encontradas: {queryResult.count}</div>
                     <div>Comparaciones: {queryResult.comparisons}</div>
+                    <div>⏱️ Tiempo total (con red): {(queryResult as any).queryTimeMs?.toFixed(2) ?? 'N/A'} ms</div>
+                    <div style={{ color: "#27ae60" }}>
+                      ⚡ Tiempo real Quadtree: {(queryResult as any).processingTimeMs?.toFixed(4) ?? 'N/A'} ms
+                    </div>
                     <div className="query-result-list">
                       {queryResult.particles.slice(0, 12).map((particle) => (
                         <span key={particle.id}>#{particle.id} ({particle.x.toFixed(0)}, {particle.y.toFixed(0)})</span>
@@ -695,5 +958,4 @@ const TreeVisualizer: React.FC = () => {
     </div>
   );
 };
-
 export default TreeVisualizer;

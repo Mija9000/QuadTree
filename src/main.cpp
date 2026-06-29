@@ -3,13 +3,14 @@
 #include <nlohmann/json.hpp>
 #include <random>
 #include <memory>
+#include <chrono>  // ← Para medir tiempo
 
 namespace {
 
 constexpr double kWorldX = 0.0;
 constexpr double kWorldY = 0.0;
-constexpr double kWorldW = 720.0;
-constexpr double kWorldH = 720.0;
+constexpr double kWorldW = 1000.0;
+constexpr double kWorldH = 1000.0;
 
 std::mt19937& rng() {
     static std::mt19937 generator{std::random_device{}()};
@@ -41,9 +42,6 @@ bool readRange(const crow::json::rvalue& body, AABB& range) {
     return range.w > 0.0 && range.h > 0.0;
 }
 
-bool readBoundary(const crow::json::rvalue& body, AABB& boundary) {
-    return readRange(body, boundary);
-}
 
 } // namespace
 
@@ -171,45 +169,51 @@ int main() {
     });
 
     CROW_ROUTE(app, "/query").methods("POST"_method)([&tree](const crow::request& req){
-        auto body = crow::json::load(req.body);
-        if (!body) {
-            crow::response res(400);
-            res.set_header("Content-Type", "application/json");
-            res.body = "{\"error\":\"invalid json\"}";
-            return res;
-        }
-
-        AABB range;
-        if (!readRange(body, range)) {
-            crow::response res(400);
-            res.set_header("Content-Type", "application/json");
-            res.body = "{\"error\":\"invalid range\"}";
-            return res;
-        }
-
-        std::vector<Particle*> result;
-        int comparisons = 0;
-        tree.query(range, result, comparisons);
-
-        nlohmann::json response;
-        response["range"] = {
-            {"x", range.x},
-            {"y", range.y},
-            {"w", range.w},
-            {"h", range.h}
-        };
-        response["comparisons"] = comparisons;
-        response["count"] = result.size();
-        response["particles"] = nlohmann::json::array();
-        for (const auto* p : result) {
-            response["particles"].push_back(particleToJson(p));
-        }
-
-        crow::response res(200);
+    auto body = crow::json::load(req.body);
+    if (!body) {
+        crow::response res(400);
         res.set_header("Content-Type", "application/json");
-        res.body = response.dump();
+        res.body = "{\"error\":\"invalid json\"}";
         return res;
-    });
+    }
+
+    AABB range;
+    if (!readRange(body, range)) {
+        crow::response res(400);
+        res.set_header("Content-Type", "application/json");
+        res.body = "{\"error\":\"invalid range\"}";
+        return res;
+    }
+
+    std::vector<Particle*> result;
+    int comparisons = 0;
+    
+    // 🔥 MEDIR TIEMPO DE PROCESAMIENTO REAL DEL QUADTREE
+    auto startTime = std::chrono::high_resolution_clock::now();
+    tree.query(range, result, comparisons);
+    auto endTime = std::chrono::high_resolution_clock::now();
+    double processingTimeMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+
+    nlohmann::json response;
+    response["range"] = {
+        {"x", range.x},
+        {"y", range.y},
+        {"w", range.w},
+        {"h", range.h}
+    };
+    response["comparisons"] = comparisons;
+    response["count"] = result.size();
+    response["processingTimeMs"] = processingTimeMs; // ← Tiempo REAL del Quadtree
+    response["particles"] = nlohmann::json::array();
+    for (const auto* p : result) {
+        response["particles"].push_back(particleToJson(p));
+    }
+
+    crow::response res(200);
+    res.set_header("Content-Type", "application/json");
+    res.body = response.dump();
+    return res;
+});
     // Nuevos -----------------------------------
 
     // Endpoint para vaciar el árbol
@@ -224,41 +228,51 @@ int main() {
         return res;
     });
 
-    CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
-        auto body = crow::json::load(req.body);
-        if (!body) {
-            crow::response res(400);
-            res.set_header("Content-Type", "application/json");
-            res.body = "{\"error\":\"invalid json\"}";
-            return res;
-        }
-
-        AABB boundary;
-        if (!readBoundary(body, boundary)) {
-            crow::response res(400);
-            res.set_header("Content-Type", "application/json");
-            res.body = "{\"error\":\"invalid boundary\"}";
-            return res;
-        }
-
-        tree.reset(boundary);
-        ownedParticles.clear();
-        nextId = 0;
-
-        nlohmann::json response;
-        response["status"] = "boundary-set";
-        response["boundary"] = {
-            {"x", boundary.x},
-            {"y", boundary.y},
-            {"w", boundary.w},
-            {"h", boundary.h}
-        };
-
-        crow::response res(200);
+    // Endpoint para cambiar el tamaño del mundo
+CROW_ROUTE(app, "/set-boundary").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
+    auto body = crow::json::load(req.body);
+    if (!body) {
+        crow::response res(400);
         res.set_header("Content-Type", "application/json");
-        res.body = response.dump();
+        res.body = "{\"error\":\"invalid json\"}";
         return res;
-    });
+    }
+
+    if (!body.has("size")) {
+        crow::response res(400);
+        res.set_header("Content-Type", "application/json");
+        res.body = "{\"error\":\"missing 'size' field\"}";
+        return res;
+    }
+
+    double size = body["size"].d();
+    if (size <= 0) {
+        crow::response res(400);
+        res.set_header("Content-Type", "application/json");
+        res.body = "{\"error\":\"size must be greater than 0\"}";
+        return res;
+    }
+
+    AABB boundary = {0.0, 0.0, size, size};
+
+    tree.reset(boundary);
+    ownedParticles.clear();
+    nextId = 0;
+
+    nlohmann::json response;
+    response["status"] = "boundary-set";
+    response["boundary"] = {
+        {"x", 0.0},
+        {"y", 0.0},
+        {"w", size},
+        {"h", size}
+    };
+
+    crow::response res(200);
+    res.set_header("Content-Type", "application/json");
+    res.body = response.dump();
+    return res;
+});
     // Endpoint para reconstruir el árbol con un conjunto de partículas
     CROW_ROUTE(app, "/rebuild").methods("POST"_method)([&tree, &ownedParticles, &nextId](const crow::request& req){
         auto body = crow::json::load(req.body);
@@ -297,6 +311,7 @@ int main() {
         res.body = "{\"status\":\"rebuilt\",\"count\":" + std::to_string(ownedParticles.size()) + "}";
         return res;
     });
+    
 
 
     app.port(8080).multithreaded().run();
