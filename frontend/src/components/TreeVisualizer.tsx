@@ -697,18 +697,23 @@ const TreeVisualizer: React.FC = () => {
           </div>
 
           <div className="control-section action-section action-section-left">
-            <div className="section-title">Redimensionar mundo</div>
-            
+            {/* 🔥 ACCIONES: Insertar partícula, Limpiar y Limpiar stats */}
+            <div className="section-title">Acciones</div>
+            <div className="controls action-controls" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button onClick={handleInsert} className="insert-button" disabled={loading}>
+                {loading ? "⏳ Insertando..." : "➕ Insertar Partícula"}
+              </button>
+              <button onClick={handleClear} className="insert-button danger-button" disabled={loading}>
+                Limpiar
+              </button>
+              <button onClick={() => setInsertStats(null)} className="insert-button secondary-button" disabled={loading}>
+                Limpiar stats
+              </button>
+            </div>
+
+            {/* 🔥 REDIMENSIONAR MUNDO */}
+            <div className="section-title" style={{ marginTop: "12px" }}>Redimensionar mundo</div>
             <div className="controls" style={{ display: "flex", gap: "8px", alignItems: "end", width: "100%", marginBottom: "8px" }}>
-              <button onClick={() => handleBulkInsert(100)} className="insert-button secondary-button" disabled={loading}>
-                Insertar 100
-              </button>
-              <button onClick={() => handleBulkInsert(1000)} className="insert-button secondary-button" disabled={loading}>
-                Insertar 1000
-              </button>
-              <button onClick={() => handleBulkInsert(10000)} className="insert-button secondary-button" disabled={loading}>
-                Insertar 10000
-              </button>
               <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px", fontWeight: 600, flex: 1 }}>
                 Tamaño (N x N)
                 <input
@@ -728,16 +733,17 @@ const TreeVisualizer: React.FC = () => {
               📐 Tamaño: {quadrantSize}x{quadrantSize} | Área: {quadrantSize * quadrantSize} | Rango: 0 - {quadrantSize}
             </div>
 
-            <div className="section-title" style={{ marginTop: "12px" }}>Acciones</div>
-            <div className="controls action-controls">
-              <button onClick={handleInsert} className="insert-button" disabled={loading}>
-                {loading ? "⏳ Insertando..." : "➕ Insertar Partícula"}
+            {/* 🔥 INSERCIONES MASIVAS - MISMA LÍNEA */}
+            <div className="section-title" style={{ marginTop: "12px" }}>Inserción masiva</div>
+            <div className="controls" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              <button onClick={() => handleBulkInsert(100)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 100
               </button>
-              <button onClick={handleClear} className="insert-button danger-button" disabled={loading}>
-                Limpiar
+              <button onClick={() => handleBulkInsert(1000)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 1000
               </button>
-              <button onClick={() => setInsertStats(null)} className="insert-button secondary-button" disabled={loading}>
-                Limpiar stats
+              <button onClick={() => handleBulkInsert(10000)} className="insert-button secondary-button" disabled={loading}>
+                Insertar 10000
               </button>
             </div>
           </div>
@@ -840,7 +846,6 @@ const TreeVisualizer: React.FC = () => {
                 </div>
 
                 {/* 🔥 BOTÓN DE FUERZA BRUTA */}
-                
                 <div style={{ marginTop: "8px", display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   <button 
                     onClick={handleBruteForceQuery} 
@@ -940,7 +945,6 @@ const TreeVisualizer: React.FC = () => {
                           ~{(insertStats.count * insertStats.count / (queryResult?.comparisons || Math.ceil(Math.log2(insertStats.count)))).toFixed(0)}x más rápido
                         </strong>
                       </div>
-                      {/* 🔥 TIEMPOS REALES */}
                       {(queryResult?.queryTimeMs !== undefined || bruteForceResult) && (
                         <div style={{ gridColumn: "span 2", borderTop: "1px solid #ddd", paddingTop: "8px", marginTop: "4px" }}>
                           <span style={{ color: "#6c757d" }}>⏱️ Tiempo Quadtree:</span>

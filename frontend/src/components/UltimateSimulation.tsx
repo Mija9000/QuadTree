@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
-import { getTree, queryTree } from "../services/api";
+import { getTree, queryTree, setTreeBoundary } from "../services/api";
 import { rebuildSimulationTree, SimulationParticle } from "../services/simulationApi";
 import "../styles/ProSimulation.css";
 
@@ -47,7 +47,8 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const randomBetween = (min: number, max: number) => min + Math.random() * (max - min);
 const clampDroneCount = (value: number) => Math.max(0, Math.round(Number.isFinite(value) ? value : 0));
 
-const createDrone = (id: number): Drone => {
+// ✅ REEMPLAZA POR:
+const createDrone = (id: number, worldSize: number): Drone => {
   const angle = randomBetween(0, Math.PI * 2);
   const speed = randomBetween(36, 62);
   const safetyRadius = randomBetween(26, 38);
@@ -55,8 +56,8 @@ const createDrone = (id: number): Drone => {
 
   return {
     id,
-    x: randomBetween(radius + 6, WORLD_SIZE - radius - 6),
-    y: randomBetween(radius + 6, WORLD_SIZE - radius - 6),
+    x: randomBetween(radius + 6, worldSize - radius - 6),
+    y: randomBetween(radius + 6, worldSize - radius - 6),
     vx: Math.cos(angle) * speed,
     vy: Math.sin(angle) * speed,
     radius,
@@ -66,9 +67,12 @@ const createDrone = (id: number): Drone => {
   };
 };
 
-const createFleet = (count: number) => Array.from({ length: clampDroneCount(count) }, (_, index) => createDrone(index));
+// ✅ REEMPLAZA POR:
+const createFleet = (count: number, worldSize: number) =>
+  Array.from({ length: clampDroneCount(count) }, (_, index) => createDrone(index, worldSize));
 
-const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
+// ✅ REEMPLAZA POR:
+const moveDrone = (drone: Drone, deltaSeconds: number, worldSize: number): Drone => {
   let x = drone.x + drone.vx * deltaSeconds;
   let y = drone.y + drone.vy * deltaSeconds;
   let vx = drone.vx;
@@ -77,16 +81,16 @@ const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
   if (x - drone.radius < 0) {
     x = drone.radius;
     vx = Math.abs(vx);
-  } else if (x + drone.radius > WORLD_SIZE) {
-    x = WORLD_SIZE - drone.radius;
+  } else if (x + drone.radius > worldSize) {
+    x = worldSize - drone.radius;
     vx = -Math.abs(vx);
   }
 
   if (y - drone.radius < 0) {
     y = drone.radius;
     vy = Math.abs(vy);
-  } else if (y + drone.radius > WORLD_SIZE) {
-    y = WORLD_SIZE - drone.radius;
+  } else if (y + drone.radius > worldSize) {
+    y = worldSize - drone.radius;
     vy = -Math.abs(vy);
   }
 
@@ -100,13 +104,13 @@ const moveDrone = (drone: Drone, deltaSeconds: number): Drone => {
   };
 };
 
-const queryRangeForDrone = (drone: Drone) => {
+// ✅ REEMPLAZA POR:
+const queryRangeForDrone = (drone: Drone, worldSize: number) => {
   const padding = drone.safetyRadius;
-  const x = clamp(drone.x - padding, 0, WORLD_SIZE);
-  const y = clamp(drone.y - padding, 0, WORLD_SIZE);
-  const w = clamp(padding * 2, 1, WORLD_SIZE - x);
-  const h = clamp(padding * 2, 1, WORLD_SIZE - y);
-
+  const x = clamp(drone.x - padding, 0, worldSize);
+  const y = clamp(drone.y - padding, 0, worldSize);
+  const w = clamp(padding * 2, 1, worldSize - x);
+  const h = clamp(padding * 2, 1, worldSize - y);
   return { x, y, w, h };
 };
 
@@ -393,22 +397,38 @@ const createCloud = (x: number, y: number, z: number, scale: number) => {
   return group;
 };
 
-const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }) => {
+const buildBoundaryLine = (boundary: { x: number; y: number; w: number; h: number }, worldSize: number, depth: number = 0) => {
   const { x, y, w, h } = boundary;
+  
+  // 🔥 CENTRAR EL QUADTREE EN EL MISMO SISTEMA QUE LOS DRONES
+  // Los drones usan: sceneX = drone.x - worldSize/2
+  // El Quadtree debe usar la misma fórmula
+  const cx = x - worldSize / 2;
+  const cy = y - worldSize / 2;
+  
+  // 🔥 ALTURA DONDE ESTÁN LOS DRONES (y = 0)
+  const height = -30;
+  
   const corners = [
-    new THREE.Vector3(x - WORLD_SIZE / 2, 0.75, y - WORLD_SIZE / 2),
-    new THREE.Vector3(x + w - WORLD_SIZE / 2, 0.75, y - WORLD_SIZE / 2),
-    new THREE.Vector3(x + w - WORLD_SIZE / 2, 0.75, y + h - WORLD_SIZE / 2),
-    new THREE.Vector3(x - WORLD_SIZE / 2, 0.75, y + h - WORLD_SIZE / 2),
-    new THREE.Vector3(x - WORLD_SIZE / 2, 0.75, y - WORLD_SIZE / 2),
+    new THREE.Vector3(cx, height, cy),
+    new THREE.Vector3(cx + w, height, cy),
+    new THREE.Vector3(cx + w, height, cy + h),
+    new THREE.Vector3(cx, height, cy + h),
+    new THREE.Vector3(cx, height, cy),
   ];
 
   const geometry = new THREE.BufferGeometry().setFromPoints(corners);
+  
+  const colors = [0xff0040, 0xff6600, 0xffcc00, 0x00ff66, 0x00ccff];
+  const color = colors[Math.min(depth, colors.length - 1)];
+  
   const material = new THREE.LineBasicMaterial({
-    color: 0x8ee9ff,
+    color: color,
     transparent: true,
-    opacity: 0.14,
+    opacity: 0.85,
+    linewidth: 2,
   });
+  
   return new THREE.Line(geometry, material);
 };
 
@@ -425,13 +445,14 @@ const UltimateSimulation: React.FC = () => {
   const stepInProgressRef = useRef(false);
   const previousTimestampRef = useRef<number | null>(null);
   const lastSimulationFrameTimesRef = useRef<number[]>([]);
-  const dronesRef = useRef<Drone[]>(createFleet(12));
   const droneVisualsRef = useRef<Record<number, DroneVisual>>({});
   const droneModelRef = useRef<THREE.Group | null>(null);
   const quadtreeGroupRef = useRef<THREE.Group | null>(null);
   const lastSyncRef = useRef<Date | null>(null);
 
-  const [droneCount, setDroneCount] = useState<number>(12);
+  const [droneCount, setDroneCount] = useState<number>(12); // corecto
+  const [worldSize, setWorldSize] = useState<number>(720); // correcto
+  const dronesRef = useRef<Drone[]>(createFleet(12, worldSize));
   const [drones, setDrones] = useState<Drone[]>(() => dronesRef.current);
   const [running, setRunning] = useState(false);
   const [tree, setTree] = useState<TreeNodeSnapshot | null>(null);
@@ -450,145 +471,177 @@ const UltimateSimulation: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const showQuadtreeRef = useRef(showQuadtree);
 
+
   showQuadtreeRef.current = showQuadtree;
 
   useEffect(() => {
-    const loader = new GLTFLoader() as any;
-    let cancelled = false;
+  const loader = new GLTFLoader() as any;
+  let cancelled = false;
 
-    console.log("Intentando cargar modelo Spark desde /models/spark.glb...");
+  console.log("🔍 Intentando cargar modelo Spark desde /models/spark.glb...");
 
-    loader.load(
-      "/models/spark.glb",
-      (gltf: any) => {
-        if (cancelled) {
-          return;
-        }
+  loader.load(
+    "/models/spark.glb",
+    (gltf: any) => {
+      if (cancelled) {
+        return;
+      }
 
-        console.log("Modelo cargado exitosamente!", gltf);
+      console.log("✅ Modelo cargado exitosamente!", gltf);
 
-        const model = gltf.scene as THREE.Group;
-        model.visible = true;
-        model.position.set(0, 30, 0);
-        (model.rotation as any).x = 0;
-        (model.rotation as any).y = 0;
-        (model.rotation as any).z = 0;
-        model.scale.set(34, 34, 34);
+      const model = gltf.scene as THREE.Group;
+      model.visible = true;
+      
+      // 🔥 PRIMERO CALCULAR EL CENTRO ANTES DE MOVERLO
+      const box = new (THREE as any).Box3().setFromObject(model);
+      const center = new THREE.Vector3();
+      const size = new THREE.Vector3();
+      box.getCenter(center);
+      box.getSize(size);
+      
+      console.log("📦 Centro REAL del modelo (antes de mover):", center);
+      console.log("📦 Tamaño REAL del modelo:", size);
+      console.log("📦 Centro Y:", center.y);
+      
+      // 🔥 LUEGO MOVER Y ESCALAR
+      model.position.set(0, 30, 0);
+      (model.rotation as any).x = 0;
+      (model.rotation as any).y = 0;
+      (model.rotation as any).z = 0;
+      model.scale.set(34, 34, 34);
 
-        model.traverse((child) => {
-          const mesh = child as any;
-          if (mesh && (mesh.type === "Mesh" || mesh.isMesh)) {
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            mesh.frustumCulled = false;
-            mesh.name = mesh.name || "spark-part";
+      model.traverse((child) => {
+        const mesh = child as any;
+        if (mesh && (mesh.type === "Mesh" || mesh.isMesh)) {
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          mesh.frustumCulled = false;
+          mesh.name = mesh.name || "spark-part";
 
-            const material = mesh.material;
-            if (Array.isArray(material)) {
-              material.forEach((entry: any) => {
-                if (entry) {
-                  entry.roughness = 0.3;
-                  entry.metalness = 0.7;
-                  entry.needsUpdate = true;
-                }
-              });
-            } else if (material) {
-              (material as any).roughness = 0.3;
-              (material as any).metalness = 0.7;
-              (material as any).needsUpdate = true;
-            }
+          const material = mesh.material;
+          if (Array.isArray(material)) {
+            material.forEach((entry: any) => {
+              if (entry) {
+                entry.roughness = 0.3;
+                entry.metalness = 0.7;
+                entry.needsUpdate = true;
+              }
+            });
+          } else if (material) {
+            (material as any).roughness = 0.3;
+            (material as any).metalness = 0.7;
+            (material as any).needsUpdate = true;
           }
-        });
+        }
+      });
 
-        const scene = sceneRef.current;
-        if (scene) {
-          scene.add(model);
-          console.log("Modelo agregado a la escena para prueba en (0, 30, 0)");
-        }
-
-        const fit = fitDroneModel(model);
-        (model as any).userData.baseSize = fit.size;
-        console.log("Posición del modelo:", model.position);
-        console.log("Escala del modelo:", model.scale);
-        console.log("Base size del modelo:", fit.size);
-        droneModelRef.current = model;
-        setDroneModel(model);
-      },
-      (event: any) => {
-        if (event?.loaded !== undefined && event?.total) {
-          const percent = ((event.loaded / event.total) * 100).toFixed(1);
-          console.log(`Cargando: ${percent}%`);
-        }
-      },
-      (error: any) => {
-        if (!cancelled) {
-          console.error("Error cargando modelo", error);
-          setError(error instanceof Error ? error.message : "No se pudo cargar /models/spark.glb");
-        }
+      const scene = sceneRef.current;
+      if (scene) {
+        scene.add(model);
+        console.log("✅ Modelo agregado a la escena en (0, 30, 0)");
       }
-    );
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const syncQuadtreeOverlay = (snapshot: TreeNodeSnapshot | null) => {
-    const group = quadtreeGroupRef.current;
-    if (!group) return;
-
-    for (const child of group.children.slice()) {
-      const mesh = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
-      disposeObject(mesh);
-      group.remove(child);
+      // 🔥 AHORA APLICAR fitDroneModel (esto mueve el centro a 0,0,0)
+      const fit = fitDroneModel(model);
+      (model as any).userData.baseSize = fit.size;
+      
+      // 🔥 CALCULAR EL CENTRO DESPUÉS DE fitDroneModel
+      const boxAfterFit = new (THREE as any).Box3().setFromObject(model);
+      const centerAfterFit = new THREE.Vector3();
+      boxAfterFit.getCenter(centerAfterFit);
+      
+      console.log("📍 Posición del modelo (set):", model.position);
+      console.log("📐 Escala del modelo:", model.scale);
+      console.log("📏 Base size del modelo:", fit.size);
+      console.log("🎯 Centro DESPUÉS de fitDroneModel (para usar en Quadtree):", centerAfterFit);
+      console.log("🎯 Centro Y después de fit:", centerAfterFit.y);
+      
+      droneModelRef.current = model;
+      setDroneModel(model);
+    },
+    (event: any) => {
+      if (event?.loaded !== undefined && event?.total) {
+        const percent = ((event.loaded / event.total) * 100).toFixed(1);
+        console.log(`📦 Cargando: ${percent}%`);
+      }
+    },
+    (error: any) => {
+      if (!cancelled) {
+        console.error("❌ Error cargando modelo", error);
+        setError(error instanceof Error ? error.message : "No se pudo cargar /models/spark.glb");
+      }
     }
+  );
 
-    if (!showQuadtreeRef.current || !snapshot) return;
-
-    const visit = (node: TreeNodeSnapshot) => {
-      group.add(buildBoundaryLine(node.boundary));
-      for (const child of node.children ?? []) {
-        visit(child);
-      }
-    };
-
-    visit(snapshot);
+  return () => {
+    cancelled = true;
   };
+}, []);
+
+const syncQuadtreeOverlay = (snapshot: TreeNodeSnapshot | null) => {
+  
+  console.log("🔴 Quadtree con worldSize:", worldSize);
+  const group = quadtreeGroupRef.current;
+  if (!group) return;
+
+  for (const child of group.children.slice()) {
+    const mesh = child as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
+    disposeObject(mesh);
+    group.remove(child);
+  }
+
+  if (!showQuadtreeRef.current || !snapshot) return;
+
+  // 🔥 LOG PARA DEPURAR
+  console.log("🌳 Dibujando Quadtree con worldSize:", worldSize);
+  console.log("🌳 Primer nodo boundary:", snapshot.boundary);
+
+  const visit = (node: TreeNodeSnapshot, depth: number = 0) => {
+    // 🔥 PASAR worldSize Y depth A buildBoundaryLine
+    group.add(buildBoundaryLine(node.boundary, worldSize, depth));
+    
+    for (const child of node.children ?? []) {
+      visit(child, depth + 1);
+    }
+  };
+  visit(snapshot, 0);
+};
 
   const syncDroneVisuals = (fleet: Drone[]) => {
-    const scene = sceneRef.current;
-    const model = droneModelRef.current;
-    if (!scene || !model) return;
+    console.log("🟢 Drones con worldSize:", worldSize);
+  const scene = sceneRef.current;
+  const model = droneModelRef.current;
+  if (!scene || !model) return;
 
-    const incomingIds = new Set(fleet.map((drone) => drone.id));
-    for (const [id, visual] of Object.entries(droneVisualsRef.current).map(([key, value]) => [Number(key), value] as const)) {
-      if (!incomingIds.has(id)) {
-        scene.remove(visual.group);
-        disposeObject(visual.group);
-        delete droneVisualsRef.current[id];
-      }
+  const incomingIds = new Set(fleet.map((drone) => drone.id));
+  for (const [id, visual] of Object.entries(droneVisualsRef.current).map(([key, value]) => [Number(key), value] as const)) {
+    if (!incomingIds.has(id)) {
+      scene.remove(visual.group);
+      disposeObject(visual.group);
+      delete droneVisualsRef.current[id];
+    }
+  }
+
+  fleet.forEach((drone) => {
+    let visual = droneVisualsRef.current[drone.id];
+    if (!visual) {
+      const clone = cloneDroneModel(model);
+      visual = { group: clone };
+      droneVisualsRef.current[drone.id] = visual;
+      scene.add(clone);
     }
 
-    fleet.forEach((drone) => {
-      let visual = droneVisualsRef.current[drone.id];
-      if (!visual) {
-        const clone = cloneDroneModel(model);
-        visual = { group: clone };
-        droneVisualsRef.current[drone.id] = visual;
-        scene.add(clone);
-      }
-
-      const sceneX = drone.x - WORLD_SIZE / 2;
-      const sceneZ = drone.y - WORLD_SIZE / 2;
-        const scale = 34;
-        const height = 30;
-      visual.group.position.set(sceneX, height, sceneZ);
-      visual.group.rotation.y = Math.atan2(drone.vx, drone.vy);
-      visual.group.rotation.x = Math.sin((drone.id + drone.x) / 80) * 0.04;
-      visual.group.rotation.z = Math.cos((drone.id + drone.y) / 90) * 0.03;
-      visual.group.scale.setScalar(scale);
-    });
-  };
+    const sceneX = drone.x - worldSize / 2;
+    const sceneZ = drone.y - worldSize / 2;
+    const scale = 34;
+    const height = 0;
+    visual.group.position.set(sceneX, height, sceneZ);
+    visual.group.rotation.y = Math.atan2(drone.vx, drone.vy);
+    visual.group.rotation.x = Math.sin((drone.id + drone.x) / 80) * 0.04;
+    visual.group.rotation.z = Math.cos((drone.id + drone.y) / 90) * 0.03;
+    visual.group.scale.setScalar(scale);
+  });
+};
 
   const updateQuadtree = async (fleet: Drone[]) => {
     await rebuildSimulationTree(fleet);
@@ -627,7 +680,7 @@ const UltimateSimulation: React.FC = () => {
 
   const resetFleet = async () => {
     stopSimulation();
-    const freshFleet = createFleet(droneCount);
+    const freshFleet = createFleet(droneCount, worldSize);
     dronesRef.current = freshFleet;
     setDrones(freshFleet);
     setTree(null);
@@ -652,11 +705,29 @@ const UltimateSimulation: React.FC = () => {
     }
   };
 
+  const handleApplyBoundary = async () => {
+  try {
+    console.log("📡 Redimensionando a:", worldSize);
+    await setTreeBoundary(worldSize);
+    stopSimulation();
+    const freshFleet = createFleet(droneCount, worldSize);
+    dronesRef.current = freshFleet;
+    setDrones(freshFleet);
+    syncDroneVisuals(freshFleet);
+    await updateQuadtree(freshFleet);
+    console.log(`✅ Mundo redimensionado a ${worldSize}x${worldSize}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Error desconocido";
+    setError(message);
+    console.error("Error al cambiar tamaño:", err);
+  }
+};
+
   const startSimulation = async () => {
     if (runningRef.current) return;
 
     if (dronesRef.current.length === 0) {
-      const freshFleet = createFleet(droneCount);
+      const freshFleet = createFleet(droneCount, worldSize);
       dronesRef.current = freshFleet;
       setDrones(freshFleet);
       syncDroneVisuals(freshFleet);
@@ -685,14 +756,14 @@ const UltimateSimulation: React.FC = () => {
 
       stepInProgressRef.current = true;
       try {
-        const movedFleet = dronesRef.current.map((drone) => moveDrone(drone, deltaSeconds));
+        const movedFleet = dronesRef.current.map((drone) => moveDrone(drone, deltaSeconds, worldSize));
         const rebuildStart = performance.now();
         await rebuildSimulationTree(movedFleet);
         const rebuildMs = performance.now() - rebuildStart;
 
         const [treeSnapshot, queryResults] = await Promise.all([
           getTree() as Promise<TreeNodeSnapshot>,
-          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone)) as Promise<QueryResult>)),
+          Promise.all(movedFleet.map((drone) => queryTree(queryRangeForDrone(drone, worldSize)) as Promise<QueryResult>)),
         ]);
 
         let totalComparisons = 0;
@@ -808,7 +879,7 @@ const UltimateSimulation: React.FC = () => {
     host.appendChild(renderer.domElement);
 
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 6000);
-    camera.position.set(0, 120, 340);
+    camera.position.set(0, 80, 150); // ← AJUSTA ESTOS VALORES
     cameraRef.current = camera;
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -816,11 +887,11 @@ const UltimateSimulation: React.FC = () => {
     controls.dampingFactor = 0.08;
     controls.enablePan = true;
     controls.enableZoom = true;
-    controls.minDistance = 150;
-    controls.maxDistance = 1800;
-    controls.minPolarAngle = 0.25;
-    controls.maxPolarAngle = 1.35;
-    controls.target.set(0, 24, 0);
+    controls.minDistance = 5;
+    controls.maxDistance = 3000;
+    controls.minPolarAngle = 0.05;
+    controls.maxPolarAngle = 1.45;
+    controls.target.set(0, 0, 0); // ← LOS DRONES ESTÁN EN Y=0
     controls.update();
     controlsRef.current = controls;
 
@@ -966,7 +1037,7 @@ const UltimateSimulation: React.FC = () => {
     quadtreeGroupRef.current = quadtreeGroup;
     scene.add(quadtreeGroup);
 
-    const initialFleet = createFleet(droneCount);
+    const initialFleet = createFleet(droneCount, worldSize);
     dronesRef.current = initialFleet;
     setDrones(initialFleet);
     syncDroneVisuals(initialFleet);
@@ -1007,7 +1078,7 @@ const UltimateSimulation: React.FC = () => {
           const sceneX = drone.x - WORLD_SIZE / 2;
           const sceneZ = drone.y - WORLD_SIZE / 2;
           const scale = 34;
-          const altitude = 30 + Math.sin((now / 1000) * 1.5 + drone.id) * 0.8;
+          const altitude = 0 + Math.sin((now / 1000) * 1.5 + drone.id) * 0.8;
           visual.group.position.set(sceneX, altitude, sceneZ);
           visual.group.rotation.y = Math.atan2(drone.vx, drone.vy);
           visual.group.rotation.x = Math.sin((now / 1000) * 3 + drone.id) * 0.03;
@@ -1057,7 +1128,7 @@ const UltimateSimulation: React.FC = () => {
 
   useEffect(() => {
     if (runningRef.current) return;
-    const freshFleet = createFleet(droneCount);
+    const freshFleet = createFleet(droneCount, worldSize);
     dronesRef.current = freshFleet;
     setDrones(freshFleet);
     syncDroneVisuals(freshFleet);
@@ -1092,15 +1163,23 @@ const UltimateSimulation: React.FC = () => {
 
         <div className="simulation-card controls-card">
           <div className="section-title">Vista</div>
-          <label className="count-field">
-            <span>Número de drones</span>
+          <label className="count-field" style={{ marginTop: "8px" }}>
+            <span>Tamaño del mundo (N x N)</span>
             <input
               type="number"
-              min={0}
-              value={droneCount}
-              onChange={(event) => setDroneCount(Math.max(0, Math.round(Number(event.target.value || 0))))}
+              min={1}
+              value={worldSize}
+              onChange={(event) => setWorldSize(Math.max(1, Number(event.target.value || 1)))}
             />
           </label>
+
+          <button 
+            className="primary-action" 
+            onClick={handleApplyBoundary}
+            style={{ marginTop: "8px", marginBottom: "12px", width: "100%" }}
+          >
+            🔄 Redimensionar mundo
+          </button>
           <div className="pro-control-row">
             <button className={running ? "primary-action" : "secondary-action"} onClick={() => (running ? stopSimulation() : void startSimulation())}>
               {running ? "Detener" : "Iniciar"}
