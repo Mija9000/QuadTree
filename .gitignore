@@ -10,3 +10,4 @@ sam-installation/
 samconfig.toml
 template.yml
 aws-sam-cli-linux-x86_64.zip
+*.zip
