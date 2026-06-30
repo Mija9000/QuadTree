@@ -61,6 +61,11 @@ const TreeVisualizer: React.FC = () => {
   const [insertStats, setInsertStats] = useState<{count: number;timeMs: number;comparisons?: number;} | null>(null);
   const [bruteForceResults, setBruteForceResults] = useState<{count: number;timeMs: number;particles: number;}[]>([]);
   const [bruteForceResult, setBruteForceResult] = useState<{count: number;timeMs: number;} | null>(null);
+  // 🔥 ESTADOS PARA CONSULTA PERSONALIZADA
+  const [customQueryX, setCustomQueryX] = useState<number>(200);
+  const [customQueryY, setCustomQueryY] = useState<number>(200);
+  const [customQueryW, setCustomQueryW] = useState<number>(50);
+  const [customQueryH, setCustomQueryH] = useState<number>(50);
 
   const WORLD_SIZE = 400;
   const canvasSize = { width: 560, height: 560 } as const;
@@ -315,6 +320,44 @@ const TreeVisualizer: React.FC = () => {
       }
     ]);
 
+
+      // 🔥 FUNCIÓN handleQuery (ya existe)
+    const handleQuery = async (range: QueryRange) => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const startTime = performance.now();
+        const response = await queryTree(range);
+        const endTime = performance.now();
+        const elapsedMs = endTime - startTime;
+        
+        setQueryRange(range);
+        setQueryResult({
+          ...response,
+          queryTimeMs: elapsedMs,
+        } as QueryResult);
+        
+        if (insertStats) {
+          setInsertStats({
+            ...insertStats,
+            comparisons: response.comparisons,
+          });
+        }
+        
+        console.log(`✅ Consulta completada en ${elapsedMs.toFixed(2)} ms`);
+        console.log(`📊 Encontradas: ${response.count} partículas`);
+        console.log(`🔍 Comparaciones: ${response.comparisons}`);
+        
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Error desconocido";
+        console.error("Error al consultar:", err);
+        setError(`Error al consultar: ${message}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     console.log(`🧪 FB ${testSize}: ${counter.toLocaleString()} iteraciones en ${elapsedMs.toFixed(3)} ms`);
 
   } catch (err) {
@@ -325,6 +368,17 @@ const TreeVisualizer: React.FC = () => {
     setLoading(false);
   }
 };
+
+    // 🔥 CONSULTA PERSONALIZADA POR COORDENADAS
+    const handleCustomQuery = async () => {
+      const range = {
+        x: customQueryX,
+        y: customQueryY,
+        w: customQueryW,
+        h: customQueryH
+      };
+      await handleQuery(range);
+    };
 
   // para simular fuerza bruta para la comparación
   const handleBruteForceQuery = async () => {
@@ -843,6 +897,104 @@ const TreeVisualizer: React.FC = () => {
                   >
                     Inferior der.
                   </button>
+                </div>
+
+                {/* 🔥🔥🔥 NUEVO: CONSULTA PERSONALIZADA POR COORDENADAS 🔥🔥🔥 */}
+                <div style={{ 
+                  marginTop: "12px", 
+                  padding: "12px", 
+                  background: "#f0f4f8", 
+                  borderRadius: "6px",
+                  border: "1px solid #dde6f1"
+                }}>
+                  <div style={{ fontWeight: "bold", marginBottom: "8px", fontSize: "13px", color: "#2c3e50" }}>
+                    🎯 Consulta por coordenadas
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px" }}>
+                    <label style={{ fontSize: "12px", fontWeight: 600 }}>
+                      X
+                      <input
+                        type="number"
+                        value={customQueryX}
+                        onChange={(e) => setCustomQueryX(Number(e.target.value))}
+                        style={{ 
+                          width: "100%", 
+                          padding: "4px 8px", 
+                          border: "1px solid #ced4da", 
+                          borderRadius: "4px",
+                          fontSize: "13px",
+                          marginTop: "2px"
+                        }}
+                      />
+                    </label>
+                    <label style={{ fontSize: "12px", fontWeight: 600 }}>
+                      Y
+                      <input
+                        type="number"
+                        value={customQueryY}
+                        onChange={(e) => setCustomQueryY(Number(e.target.value))}
+                        style={{ 
+                          width: "100%", 
+                          padding: "4px 8px", 
+                          border: "1px solid #ced4da", 
+                          borderRadius: "4px",
+                          fontSize: "13px",
+                          marginTop: "2px"
+                        }}
+                      />
+                    </label>
+                    <label style={{ fontSize: "12px", fontWeight: 600 }}>
+                      Ancho (W)
+                      <input
+                        type="number"
+                        min="1"
+                        value={customQueryW}
+                        onChange={(e) => setCustomQueryW(Math.max(1, Number(e.target.value)))}
+                        style={{ 
+                          width: "100%", 
+                          padding: "4px 8px", 
+                          border: "1px solid #ced4da", 
+                          borderRadius: "4px",
+                          fontSize: "13px",
+                          marginTop: "2px"
+                        }}
+                      />
+                    </label>
+                    <label style={{ fontSize: "12px", fontWeight: 600 }}>
+                      Alto (H)
+                      <input
+                        type="number"
+                        min="1"
+                        value={customQueryH}
+                        onChange={(e) => setCustomQueryH(Math.max(1, Number(e.target.value)))}
+                        style={{ 
+                          width: "100%", 
+                          padding: "4px 8px", 
+                          border: "1px solid #ced4da", 
+                          borderRadius: "4px",
+                          fontSize: "13px",
+                          marginTop: "2px"
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <button 
+                    onClick={handleCustomQuery}
+                    className="insert-button secondary-button"
+                    disabled={loading || !tree}
+                    style={{ 
+                      marginTop: "8px", 
+                      width: "100%",
+                      background: "#2d8ac7",
+                      color: "white",
+                      border: "none"
+                    }}
+                  >
+                    🔍 Consultar región
+                  </button>
+                  <div style={{ fontSize: "11px", color: "#7f8c8d", marginTop: "4px" }}>
+                    📍 Busca partículas en el rectángulo (x, y) de tamaño W×H
+                  </div>
                 </div>
 
                 {/* 🔥 BOTÓN DE FUERZA BRUTA */}
