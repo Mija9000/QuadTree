@@ -5,6 +5,8 @@ https://main.d1euy5n5eo8sos.amplifyapp.com/
 
 Este proyecto implementa un **QuadTree** desde cero para simular un enjambre de partículas (drones) en un espacio 2D. La simulación permite visualizar el movimiento de las partículas, detectar colisiones y evadirlas en tiempo real, comparando el rendimiento del QuadTree contra una solución de fuerza bruta.
 
+![Descripción](imagen1.jpeg)
+
 El proyecto fue desarrollado como parte del curso **Algoritmos y Estructuras de Datos (CS2023)** y demuestra las ventajas de utilizar una estructura de datos espacial para optimizar consultas de vecindad y colisiones.
 
 ---
@@ -29,6 +31,8 @@ El **QuadTree** es una estructura de datos jerárquica que divide recursivamente
 - Todas las partículas están siempre en nodos hoja.
 
 ---
+![Descripción](imagen3.jpeg)
+![Descripción](imagen2.jpeg)
 
 ## 🎯 Operaciones Implementadas
 
