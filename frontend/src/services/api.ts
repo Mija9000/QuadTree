@@ -1,6 +1,9 @@
+// 🔥 CONFIGURACIÓN: URL de tu backend en AWS
+const API_URL = "http://44.206.225.167:8080";
+
 export async function getTree() {
   try {
-    const res = await fetch("http://localhost:8080/tree", {
+    const res = await fetch(`${API_URL}/tree`, {
       method: "GET",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
@@ -13,7 +16,6 @@ export async function getTree() {
 
     const data = await res.json();
     
-    // Validar estructura básica
     if (!data || typeof data !== 'object') {
       throw new Error("Respuesta inválida del servidor");
     }
@@ -28,12 +30,11 @@ export async function getTree() {
 
 export async function insertParticle(p: { x: number; y: number }) {
   try {
-    // Validar que los datos sean números válidos
     if (typeof p.x !== 'number' || typeof p.y !== 'number') {
       throw new Error("Coordenadas inválidas");
     }
     
-    const res = await fetch("http://localhost:8080/insert", {
+    const res = await fetch(`${API_URL}/insert`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
@@ -60,7 +61,7 @@ export async function bulkInsertParticles(count: number) {
       throw new Error("Cantidad inválida");
     }
 
-    const res = await fetch("http://localhost:8080/bulk-insert", {
+    const res = await fetch(`${API_URL}/bulk-insert`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
@@ -82,7 +83,7 @@ export async function bulkInsertParticles(count: number) {
 
 export async function clearTree() {
   try {
-    const res = await fetch("http://localhost:8080/clear", {
+    const res = await fetch(`${API_URL}/clear`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
@@ -104,11 +105,11 @@ export async function clearTree() {
 
 export async function setTreeBoundary(size: number) {
   try {
-    const res = await fetch("http://localhost:8080/set-boundary", {
+    const res = await fetch(`${API_URL}/set-boundary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",
-      body: JSON.stringify({ size }), // ← Solo envía { size: 1000 }
+      body: JSON.stringify({ size }),
     });
 
     if (!res.ok) {
@@ -126,7 +127,7 @@ export async function setTreeBoundary(size: number) {
 
 export async function queryTree(range: { x: number; y: number; w: number; h: number }) {
   try {
-    const res = await fetch("http://localhost:8080/query", {
+    const res = await fetch(`${API_URL}/query`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       mode: "cors",

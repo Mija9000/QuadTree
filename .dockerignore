@@ -1,0 +1,6 @@
+build/
+frontend/
+.git/
+*.md
+*.gitignore
+.vscode/

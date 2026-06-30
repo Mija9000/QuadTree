@@ -1,3 +1,4 @@
+#include <cstddef>  // ← Agrega esta línea
 #include "QuadTree.h"
 
 // Constructor O(1)

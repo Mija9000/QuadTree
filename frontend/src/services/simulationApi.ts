@@ -1,3 +1,6 @@
+// 🔥 CONFIGURACIÓN: URL de tu backend en AWS
+const API_URL = "http://44.206.225.167:8080";
+
 export interface SimulationParticle {
   id: number;
   x: number;
@@ -8,7 +11,7 @@ export interface SimulationParticle {
 }
 
 export async function rebuildSimulationTree(particles: SimulationParticle[]) {
-  const res = await fetch("http://localhost:8080/rebuild", {
+  const res = await fetch(`${API_URL}/rebuild`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     mode: "cors",
