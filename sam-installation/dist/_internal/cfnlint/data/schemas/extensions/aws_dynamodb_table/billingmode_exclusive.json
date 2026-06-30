@@ -1,0 +1,28 @@
+{
+ "description": "When 'BillingMode' is 'PAY_PER_REQUEST' 'ProvisionedThroughput' values must be 0",
+ "if": {
+  "properties": {
+   "BillingMode": {
+    "const": "PAY_PER_REQUEST"
+   }
+  },
+  "required": [
+   "BillingMode"
+  ],
+  "type": "object"
+ },
+ "then": {
+  "properties": {
+   "ProvisionedThroughput": {
+    "properties": {
+     "ReadCapacityUnits": {
+      "const": 0
+     },
+     "WriteCapacityUnits": {
+      "const": 0
+     }
+    }
+   }
+  }
+ }
+}

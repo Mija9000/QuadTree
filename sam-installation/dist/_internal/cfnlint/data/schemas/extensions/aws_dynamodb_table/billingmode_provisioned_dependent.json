@@ -1,0 +1,29 @@
+{
+ "if": {
+  "properties": {
+   "BillingMode": {
+    "const": "PROVISIONED"
+   }
+  },
+  "required": [
+   "BillingMode"
+  ]
+ },
+ "then": {
+  "properties": {
+   "ProvisionedThroughput": {
+    "properties": {
+     "ReadCapacityUnits": {
+      "minimum": 1
+     },
+     "WriteCapacityUnits": {
+      "minimum": 1
+     }
+    }
+   }
+  },
+  "required": [
+   "ProvisionedThroughput"
+  ]
+ }
+}

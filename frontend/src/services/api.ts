@@ -1,5 +1,5 @@
 // 🔥 CONFIGURACIÓN: URL de tu backend en AWS
-const API_URL = "http://44.206.225.167:8080";
+const API_URL = "https://u9bckqdb48.execute-api.us-east-1.amazonaws.com/prod";
 
 export async function getTree() {
   try {
