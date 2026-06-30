@@ -1,3 +1,0 @@
-{
- "pattern": "^(?!arn:[a-zA-Z0-9-]+:lambda:::awslayer:)"
-}
