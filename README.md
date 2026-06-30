@@ -1,4 +1,5 @@
 # QuadTree – Simulador de Partículas 2D con Evasión de Colisiones
+https://main.d1euy5n5eo8sos.amplifyapp.com/
 
 ## 📌 Descripción del Proyecto
 
@@ -74,34 +75,6 @@ El **QuadTree** es una estructura de datos jerárquica que divide recursivamente
 | **Frontend (3D)** | React + TypeScript + Three.js |
 | **Visualización** | HTML5 Canvas, SVG, Three.js |
 | **Despliegue** | AWS Amplify (frontend) + AWS Fargate (backend) |
-
----
-
-## 📁 Estructura del Proyecto
-
-QuadTree/
-├── src/ # Backend C++
-│ ├── main.cpp # Servidor HTTP (Crow)
-│ ├── QuadTree.cpp # Implementación del QuadTree
-│ └── QuadTree.h # Header del QuadTree
-├── include/ # Archivos de cabecera
-│ └── crow_all.h # Crow (servidor HTTP)
-├── frontend/ # Frontend React
-│ ├── src/
-│ │ ├── components/ # Componentes React
-│ │ │ ├── DroneSimulation.tsx
-│ │ │ ├── ProSimulation.tsx
-│ │ │ ├── TreeVisualizer.tsx
-│ │ │ └── UltimateSimulation.tsx
-│ │ ├── services/ # Conexión con backend
-│ │ │ ├── api.ts
-│ │ │ └── simulationApi.ts
-│ │ └── styles/ # Estilos CSS
-│ ├── public/
-│ │ └── models/ # Modelos 3D (.glb)
-│ └── package.json
-├── CMakeLists.txt # Compilación del backend
-└── README.md
 
 
 ---
